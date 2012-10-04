@@ -24,7 +24,7 @@
 #define INC_C4MusicFile
 
 #if defined HAVE_FMOD
-#include <fmod.h>
+#include <fmod.hpp>
 #elif defined HAVE_LIBSDL_MIXER
 #define USE_RWOPS
 #include <SDL_mixer.h>
@@ -61,69 +61,22 @@ protected:
 
 };
 #if defined HAVE_FMOD
-class C4MusicFileMID : public C4MusicFile
+
+class C4MusicFileFMOD : public C4MusicFile
 {
 public:
-	bool Play(bool loop = false);
-	bool Extract();
-	void Stop(int fadeout_ms = 0);
-	void CheckIfPlaying();
-	//C4MusicFileMID();
-	void SetVolume(int);
-protected:
-	FMUSIC_MODULE *mod;
-};
-
-/* MOD class */
-
-class C4MusicFileMOD : public C4MusicFile
-{
-public:
-	C4MusicFileMOD();
-	~C4MusicFileMOD();
+	C4MusicFileFMOD();
+	~C4MusicFileFMOD();
 	bool Play(bool loop = false);
 	void Stop(int fadeout_ms = 0);
 	void CheckIfPlaying();
 	void SetVolume(int);
+
+	static signed char __stdcall OnEnd(FMOD::Sound* stream, void* buff, int length, void* param);
 protected:
-	FMUSIC_MODULE *mod;
+	FMOD::Sound *mod;
+	FMOD::Channel *channel;
 	char *Data;
-};
-
-/* MP3 class */
-
-class C4MusicFileMP3 : public C4MusicFile
-{
-public:
-	C4MusicFileMP3();
-	~C4MusicFileMP3();
-	bool Play(bool loop = false);
-	void Stop(int fadeout_ms = 0);
-	void CheckIfPlaying();
-	void SetVolume(int);
-protected:
-	FSOUND_STREAM *stream;
-	char *Data;
-	int Channel;
-};
-
-/* Ogg class */
-
-class C4MusicFileOgg : public C4MusicFile
-{
-public:
-	C4MusicFileOgg();
-	~C4MusicFileOgg();
-	bool Play(bool loop = false);
-	void Stop(int fadeout_ms = 0);
-	void CheckIfPlaying();
-	void SetVolume(int);
-
-	static signed char __stdcall OnEnd(FSOUND_STREAM* stream, void* buff, int length, void* param);
-protected:
-	FSOUND_STREAM *stream;
-	char *Data;
-	int Channel;
 
 	bool Playing;
 };

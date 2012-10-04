@@ -244,24 +244,29 @@ SDLMixerSoundLoader SDLMixerSoundLoader::singleton;
 #ifdef HAVE_FMOD
 bool FMODSoundLoader::ReadInfo(SoundInfo* result, BYTE* data, size_t data_length, uint32_t options)
 {
-	int32_t iOptions = FSOUND_NORMAL | FSOUND_2D | FSOUND_LOADMEMORY;
+	FMOD_CREATESOUNDEXINFO load_info;
+	ZeroMemory(&load_info, sizeof load_info);
+	load_info.cbsize = sizeof load_info;
+	load_info.length = data_length;
+	int32_t iOptions = FMOD_2D | FMOD_OPENMEMORY | FMOD_CREATESAMPLE;
 	if (options & OPTION_Raw)
-		iOptions |= FSOUND_LOADRAW;
+		iOptions |= FMOD_OPENRAW;
 	C4SoundHandle pSample;
-	if (!(pSample = FSOUND_Sample_Load(FSOUND_UNMANAGED, (const char *)data, iOptions, 0, data_length)))
-		{ return false; }
+	if (fmod_system->createSound((const char *)(data), iOptions, &load_info, &pSample) != FMOD_OK)
+		return false;
 	// get length
-	int32_t iSamples = FSOUND_Sample_GetLength(pSample);
-	int iSampleRate = 0;
-	if (!iSamples || !FSOUND_Sample_GetDefaults(pSample, &iSampleRate, 0, 0, 0))
+	unsigned int sample_length;
+	float sample_rate;
+	if (pSample->getLength(&sample_length, FMOD_TIMEUNIT_PCM) != FMOD_OK) sample_length = 0;
+	if (pSample->getDefaults(&sample_rate, NULL, NULL, NULL) != FMOD_OK) sample_rate = 0;
+	if (!sample_length || !sample_rate)
 	{
-		FSOUND_Sample_Free(pSample);
+		pSample->release();
 		return false;
 	}
-	result->sample_rate = iSampleRate;
-	result->sample_length = static_cast<double>(iSamples) / iSampleRate;
+	result->sample_rate = sample_rate;
+	result->sample_length = static_cast<double>(sample_length) / sample_rate;
 	result->final_handle = pSample;
-	assert(result->sample_length > 0);
 	return true;
 }
 

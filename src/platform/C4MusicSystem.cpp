@@ -68,34 +68,82 @@ void C4MusicSystem::SelectContext()
 bool C4MusicSystem::InitializeMOD()
 {
 #if defined HAVE_FMOD
+	// init sequence according to docs
+	unsigned int version;
+	int numdrivers;
+	FMOD_SPEAKERMODE speakermode;
+	FMOD_CAPS caps;
+	char name[256];
+	/*
+	Create a System object and initialize.
+	*/
+	if (FMOD::System_Create(&fmod_system) != FMOD_OK) { LogF("FMOD init error"); return false; }
+	if (fmod_system->getVersion(&version) != FMOD_OK) { LogF("FMOD version error"); DeinitializeMOD(); return false; }
+	if (version < FMOD_VERSION)
+	{
+		LogF("Error! You are using an old version of FMOD %08x. This program requires %08x\n", version, FMOD_VERSION);
+		DeinitializeMOD(); return false;
+	}
 #ifdef _WIN32
 	// Debug code
+	void *init_data = NULL;
 	switch (Config.Sound.FMMode)
 	{
 	case 0:
-		FSOUND_SetOutput(FSOUND_OUTPUT_WINMM);
+		fmod_system->setOutput(FMOD_OUTPUTTYPE_WINMM);
 		break;
 	case 1:
-		FSOUND_SetOutput(FSOUND_OUTPUT_DSOUND);
-		FSOUND_SetHWND(Application.pWindow->hWindow);
+		fmod_system->setOutput(FMOD_OUTPUTTYPE_DSOUND);
+		init_data = (void *)(Application.pWindow->hWindow);
 		break;
 	case 2:
-		FSOUND_SetOutput(FSOUND_OUTPUT_DSOUND);
-		FSOUND_SetDriver(0);
+		fmod_system->setOutput(FMOD_OUTPUTTYPE_DSOUND);
 		break;
 	}
-	FSOUND_SetMixer(FSOUND_MIXER_QUALITY_AUTODETECT);
+	//
+	if (fmod_system->getNumDrivers(&numdrivers) != FMOD_OK) { LogF("FMOD driver error"); DeinitializeMOD(); return false; }
+	if (numdrivers == 0) { LogF("FMOD: 0 drivers."); DeinitializeMOD(); return false; }
+	if (fmod_system->getDriverCaps(0, &caps, 0, &speakermode) != FMOD_OK) { LogF("FMOD driver caps error"); DeinitializeMOD(); return false; }
+	/*
+	Set the user selected speaker mode.
+	*/
+	if (fmod_system->setSpeakerMode(speakermode) != FMOD_OK) { LogF("FMOD setSpeakerMode error"); DeinitializeMOD(); return false; }
+	if (caps & FMOD_CAPS_HARDWARE_EMULATED)
+	{
+		/*
+		The user has the 'Acceleration' slider set to off! This is really bad
+		for latency! You might want to warn the user about this.
+		*/
+		if (fmod_system->setDSPBufferSize(1024, 10) != FMOD_OK) { LogF("FMOD setDSPBufferSize error"); DeinitializeMOD(); return false; }
+	}
+	if (fmod_system->getDriverInfo(0, name, 256, 0) != FMOD_OK) { LogF("FMOD getDriverInfo error"); DeinitializeMOD(); return false; }
+	if (strstr(name, "SigmaTel"))
+	{
+		/*
+		Sigmatel sound devices crackle for some reason if the format is PCM 16bit.
+		PCM floating point output seems to solve it.
+		*/
+		if (fmod_system->setSoftwareFormat(48000, FMOD_SOUND_FORMAT_PCMFLOAT, 0,0,FMOD_DSP_RESAMPLER_LINEAR) != FMOD_OK) { LogF("FMOD getDriverInfo error"); DeinitializeMOD(); return false; }
+	}
 #endif
-	if (FSOUND_GetVersion() < FMOD_VERSION)
+	FMOD_RESULT result = fmod_system->init(100, FMOD_INIT_NORMAL, init_data);
+#ifdef _WIN32
+	if (result == FMOD_ERR_OUTPUT_CREATEBUFFER)
 	{
-		LogF("FMod: You are using the wrong DLL version!  You should be using %.02f", FMOD_VERSION);
-		return false;
+		/*
+		Ok, the speaker mode selected isn't supported by this soundcard. Switch it
+		back to stereo...
+		*/
+		if (fmod_system->setSpeakerMode(FMOD_SPEAKERMODE_STEREO) != FMOD_OK)
+			 { LogF("FMOD setSpeakerMode error"); DeinitializeMOD(); return false; }
+		/*
+		... and re-init.
+		*/
+		result = fmod_system->init(100, FMOD_INIT_NORMAL, init_data);
 	}
-	if (!FSOUND_Init(44100, 32, 0))
-	{
-		LogF("FMod: %s", FMOD_ErrorString(FSOUND_GetError()));
-		return false;
-	}
+#endif
+	if (result != FMOD_OK)
+		{ LogF("FMod: %s", FMOD_ErrorString(result)); DeinitializeMOD(); return false; }
 	// ok
 	MODInitialized = true;
 	return true;
@@ -135,11 +183,10 @@ bool C4MusicSystem::InitializeMOD()
 void C4MusicSystem::DeinitializeMOD()
 {
 #if defined HAVE_FMOD
-	FSOUND_StopSound(FSOUND_ALL); /* to prevent some hangs in FMOD */
-#ifdef DEBUG
-	Sleep(0);
-#endif
-	FSOUND_Close();
+	if (fmod_system)
+	{
+		fmod_system->release(); fmod_system = NULL;
+	}
 #elif defined HAVE_LIBSDL_MIXER
 	Mix_CloseAudio();
 	SDL_Quit();
@@ -228,18 +275,20 @@ void C4MusicSystem::Load(const char *szFile)
 	switch (GetMusicFileTypeByExtension(GetExtension(szFile)))
 	{
 	case MUSICTYPE_MOD:
-		if (MODInitialized) NewSong = new C4MusicFileMOD;
+		if (MODInitialized) NewSong = new C4MusicFileFMOD;
 		break;
 	case MUSICTYPE_MP3:
-		if (MODInitialized) NewSong = new C4MusicFileMP3;
+#ifdef USE_MP3
+		if (MODInitialized) NewSong = new C4MusicFileFMOD;
+#endif
 		break;
 	case MUSICTYPE_OGG:
-		if (MODInitialized) NewSong = new C4MusicFileOgg;
+		if (MODInitialized) NewSong = new C4MusicFileFMOD;
 		break;
 
 	case MUSICTYPE_MID:
 		if (MODInitialized)
-			NewSong = new C4MusicFileMID;
+			NewSong = new C4MusicFileFMOD;
 		break;
 	default: return; // safety
 	}

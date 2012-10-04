@@ -40,6 +40,10 @@
 #include <SDL_mixer.h>
 #endif
 
+#ifdef HAVE_FMOD
+FMOD::System *fmod_system;
+#endif
+
 using namespace C4SoundLoaders;
 
 C4SoundEffect::C4SoundEffect():
@@ -60,7 +64,7 @@ void C4SoundEffect::Clear()
 {
 	while (FirstInst) RemoveInst(FirstInst);
 #ifdef HAVE_FMOD
-	if (pSample) FSOUND_Sample_Free(pSample);
+	if (pSample) { pSample->release(); pSample=NULL; }
 #endif
 #ifdef HAVE_LIBSDL_MIXER
 	if (pSample) Mix_FreeChunk(pSample);
@@ -206,7 +210,7 @@ void C4SoundEffect::RemoveInst(C4SoundInstance *pInst)
 C4SoundInstance::C4SoundInstance():
 		pEffect (NULL),
 		iVolume (0), iPan (0),
-		iChannel (-1),
+		iChannel (C4SoundChannel_None),
 		pNext (NULL)
 {
 }
@@ -219,7 +223,7 @@ C4SoundInstance::~C4SoundInstance()
 void C4SoundInstance::Clear()
 {
 	Stop();
-	iChannel = -1;
+	iChannel = C4SoundChannel_None;
 }
 
 bool C4SoundInstance::Create(C4SoundEffect *pnEffect, bool fLoop, int32_t inVolume, C4Object *pnObj, int32_t inNearInstanceMax, int32_t iFalloffDistance)
@@ -232,7 +236,7 @@ bool C4SoundInstance::Create(C4SoundEffect *pnEffect, bool fLoop, int32_t inVolu
 	pEffect = pnEffect;
 	// Set
 	iStarted = GetTime();
-	iVolume = inVolume; iPan = 0; iChannel = -1;
+	iVolume = inVolume; iPan = 0; iChannel = C4SoundChannel_None;
 	iNearInstanceMax = inNearInstanceMax;
 	this->iFalloffDistance = iFalloffDistance;
 	pObj = pnObj;
@@ -262,16 +266,18 @@ bool C4SoundInstance::Start()
 {
 #ifdef HAVE_FMOD
 	// Start
-	if ((iChannel = FSOUND_PlaySound(FSOUND_FREE, pEffect->pSample)) == -1)
+	if (fmod_system->playSound(FMOD_CHANNEL_FREE, pEffect->pSample, true, &iChannel) != FMOD_OK)
 		return false;
-	if (!FSOUND_SetLoopMode(iChannel, fLooping ? FSOUND_LOOP_NORMAL : FSOUND_LOOP_OFF))
+	if (iChannel->setLoopCount(fLooping ? -1 : 0) != FMOD_OK)
+		{ Stop(); return false; }
+	if (iChannel->setPaused(false) != FMOD_OK)
 		{ Stop(); return false; }
 	// set position
 	if (GetTime() > iStarted + 20)
 	{
 		assert(pEffect->Length > 0);
 		int32_t iTime = (GetTime() - iStarted) % pEffect->Length;
-		FSOUND_SetCurrentPosition(iChannel, iTime / 10 * pEffect->SampleRate / 100);
+		iChannel->setPosition(iTime, FMOD_TIMEUNIT_MS);
 	}
 #elif defined HAVE_LIBSDL_MIXER
 	// Be paranoid about SDL_Mixer initialisation
@@ -298,7 +304,7 @@ bool C4SoundInstance::Stop()
 	bool fRet = true;
 #ifdef HAVE_FMOD
 	if (Playing())
-		fRet = !! FSOUND_StopSound(iChannel);
+		fRet = (iChannel->stop() == FMOD_OK);
 #endif
 #ifdef HAVE_LIBSDL_MIXER
 	// iChannel == -1 will halt all channels. Is that right?
@@ -309,7 +315,7 @@ bool C4SoundInstance::Stop()
 	if (Playing())
 		alSourceStop(iChannel);
 #endif
-	iChannel = -1;
+	iChannel = C4SoundChannel_None;
 	iStarted = 0;
 	fLooping = false;
 	return fRet;
@@ -320,8 +326,21 @@ bool C4SoundInstance::Playing()
 	if (!pEffect) return false;
 #ifdef HAVE_FMOD
 	if (fLooping) return true;
-	return isStarted() ? FSOUND_GetCurrentSample(iChannel) == pEffect->pSample
-	       : GetTime() < iStarted + pEffect->Length;
+	if( isStarted())
+	{
+		FMOD::Sound *sound;
+		if (iChannel->getCurrentSound(&sound) != FMOD_OK) return false;
+		if (sound == pEffect->pSample)
+		{
+			bool is_playing = false;
+			if (iChannel->isPlaying(&is_playing) == FMOD_OK)
+				return is_playing;
+		}
+	}
+	else
+	{
+		return GetTime() < iStarted + pEffect->Length;
+	}
 #endif
 #ifdef HAVE_LIBSDL_MIXER
 	return Application.MusicSystem.MODInitialized && (iChannel != -1) && Mix_Playing(iChannel);
@@ -364,7 +383,7 @@ void C4SoundInstance::Execute()
 		if (isStarted())
 		{
 #ifdef HAVE_FMOD
-			FSOUND_StopSound(iChannel);
+			iChannel->stop();
 #endif
 #ifdef HAVE_LIBSDL_MIXER
 			Mix_HaltChannel(iChannel);
@@ -372,7 +391,7 @@ void C4SoundInstance::Execute()
 #ifdef USE_OPEN_AL
 			alDeleteSources(1, (ALuint*)&iChannel);
 #endif
-			iChannel = -1;
+			iChannel = C4SoundChannel_None;
 		}
 	}
 	else
@@ -383,8 +402,8 @@ void C4SoundInstance::Execute()
 				return;
 		// set volume & panning
 #ifdef HAVE_FMOD
-		FSOUND_SetVolume(iChannel, BoundBy(iVol / 100, 0, 255));
-		FSOUND_SetPan(iChannel, BoundBy(256*(iPan+100)/200,0,255));
+		iChannel->setVolume(BoundBy<float>(float(iVol) / 25600.0f, 0.0f, 1.0f));
+		iChannel->setPan(BoundBy<float>(float(iPan) / 100.0f, -1.0f, +1.0f));
 #endif
 #ifdef HAVE_LIBSDL_MIXER
 		Mix_Volume(iChannel, (iVol * MIX_MAX_VOLUME) / (100 * 256));

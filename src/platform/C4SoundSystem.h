@@ -37,10 +37,15 @@ class C4Object;
 class C4SoundInstance;
 
 #if defined(HAVE_FMOD)
-#include <fmod.h>
-typedef FSOUND_SAMPLE* C4SoundHandle;
+#include <fmod.hpp>
+typedef FMOD::Sound* C4SoundHandle;
+typedef FMOD::Channel* C4SoundChannel;
+#define C4SoundChannel_None NULL
+extern FMOD::System *fmod_system;
 #elif defined(HAVE_LIBSDL_MIXER)
 typedef struct Mix_Chunk* C4SoundHandle;
+typedef int32_t C4SoundChannel;
+#define C4SoundChannel_None -1
 #elif defined(USE_OPEN_AL)
 #ifdef __APPLE__
 #import <OpenAL/al.h>
@@ -48,8 +53,12 @@ typedef struct Mix_Chunk* C4SoundHandle;
 #include <AL/al.h>
 #endif
 typedef ALuint C4SoundHandle;
+typedef int32_t C4SoundChannel;
+#define C4SoundChannel_None -1
 #else
 typedef void* C4SoundHandle;
+typedef void *C4SoundChannel;
+#define C4SoundChannel_None -1
 #endif
 
 class C4SoundEffect
@@ -89,7 +98,8 @@ public:
 	~C4SoundInstance();
 protected:
 	C4SoundEffect *pEffect;
-	int32_t iVolume, iPan, iChannel;
+	C4SoundChannel iChannel;
+	int32_t iVolume, iPan;
 	unsigned long iStarted;
 	int32_t iNearInstanceMax;
 	bool fLooping;
@@ -98,7 +108,8 @@ protected:
 	C4SoundInstance *pNext;
 public:
 	C4Object *getObj() const { return pObj; }
-	bool isStarted() const { return iChannel != -1; }
+	bool isStarted() const { return iChannel != C4SoundChannel_None; }
+
 	void Clear();
 	bool Create(C4SoundEffect *pEffect, bool fLoop = false, int32_t iVolume = 100, C4Object *pObj = NULL, int32_t iNearInstanceMax = 0, int32_t iFalloffDistance = 0);
 	bool CheckStart();

@@ -60,7 +60,16 @@ bool C4MusicFile::Init(const char *szFile)
 }
 
 #if defined HAVE_FMOD
-bool C4MusicFileMID::Play(bool loop)
+C4MusicFileFMOD::C4MusicFileFMOD() : mod(NULL), channel(NULL), Playing(false), Data(NULL)
+{
+}
+
+C4MusicFileFMOD::~C4MusicFileFMOD()
+{
+	Stop();
+}
+
+bool C4MusicFileFMOD::Play(bool loop)
 {
 	// check existance
 	if (!FileExists(FileName))
@@ -70,233 +79,82 @@ bool C4MusicFileMID::Play(bool loop)
 			return false;
 
 	// init fmusic
-	mod = FMUSIC_LoadSong(SongExtracted ? Config.AtTempPath(C4CFN_TempMusic2) : FileName);
+	FMOD_RESULT result = fmod_system->createSound(SongExtracted ? Config.AtTempPath(C4CFN_TempMusic2) : FileName, FMOD_DEFAULT | FMOD_CREATESTREAM | FMOD_CREATESTREAM, NULL, &mod);
 
 	if (!mod)
 	{
-		LogF("FMod: %s", FMOD_ErrorString(FSOUND_GetError()));
+		LogF("FMod load MIDI: %s", FMOD_ErrorString(result));
 		return false;
 	}
 
 	// Play Song
-	FMUSIC_PlaySong(mod);
-
-	return true;
-}
-
-void C4MusicFileMID::Stop(int fadeout_ms)
-{
-	if (mod)
+	result = fmod_system->playSound(FMOD_CHANNEL_FREE, mod, true, &channel);
+	if (result != FMOD_OK)
 	{
-		FMUSIC_StopSong(mod);
-		FMUSIC_FreeSong(mod);
-		mod = NULL;
-	}
-	RemTempFile();
-}
-
-void C4MusicFileMID::CheckIfPlaying()
-{
-	if (FMUSIC_IsFinished(mod))
-		Application.MusicSystem.NotifySuccess();
-}
-
-void C4MusicFileMID::SetVolume(int iLevel)
-{
-	FMUSIC_SetMasterVolume(mod, BoundBy((iLevel * 256) / 100, 0, 255));
-}
-
-/* MOD */
-
-C4MusicFileMOD::C4MusicFileMOD()
-		: mod(NULL), Data(NULL)
-{
-
-}
-
-C4MusicFileMOD::~C4MusicFileMOD()
-{
-	Stop();
-}
-
-bool C4MusicFileMOD::Play(bool loop)
-{
-	// Load Song
-	size_t iFileSize;
-	if (!C4Group_ReadFile(FileName, &Data, &iFileSize))
-		return false;
-
-	// init fmusic
-	mod = FMUSIC_LoadSongEx(Data, 0, iFileSize, FSOUND_LOADMEMORY, 0, 0);
-
-	if (!mod)
-	{
-		LogF("FMod: %s", FMOD_ErrorString(FSOUND_GetError()));
+		LogF("FMod play MIDI: %s", FMOD_ErrorString(result));
 		return false;
 	}
-
-	// Play Song
-	FMUSIC_PlaySong(mod);
-
-	return true;
-}
-
-void C4MusicFileMOD::Stop(int fadeout_ms)
-{
-	if (mod)
-	{
-		FMUSIC_StopSong(mod);
-		FMUSIC_FreeSong(mod);
-		mod = NULL;
-	}
-	if (Data) { delete[] Data; Data = NULL; }
-}
-
-void C4MusicFileMOD::CheckIfPlaying()
-{
-	if (FMUSIC_IsFinished(mod))
-		Application.MusicSystem.NotifySuccess();
-}
-
-void C4MusicFileMOD::SetVolume(int iLevel)
-{
-	FMUSIC_SetMasterVolume(mod, (int) ((iLevel * 255) / 100));
-}
-
-/* MP3 */
-
-C4MusicFileMP3::C4MusicFileMP3()
-		: stream(NULL), Data(NULL), Channel(-1)
-{
-
-}
-
-C4MusicFileMP3::~C4MusicFileMP3()
-{
-	Stop();
-}
-
-bool C4MusicFileMP3::Play(bool loop)
-{
-#ifndef USE_MP3
-	return false;
-#endif
-
-	// Load Song
-	size_t iFileSize;
-	if (!C4Group_ReadFile(FileName, &Data, &iFileSize))
-		return false;
-
-	// init fsound
-	int loop_flag = loop ? FSOUND_LOOP_NORMAL : 0;
-	stream = FSOUND_Stream_Open(Data, FSOUND_LOADMEMORY | FSOUND_NORMAL | FSOUND_2D | loop_flag, 0, iFileSize);
-
-	if (!stream) return false;
-
-	// Play Song
-	Channel = FSOUND_Stream_Play(FSOUND_FREE, stream);
-	if (Channel == -1) return false;
-
 	// Set highest priority
-	if (!FSOUND_SetPriority(Channel, 255))
-		return false;
-
-	return true;
-}
-
-void C4MusicFileMP3::Stop(int fadeout_ms)
-{
-	if (stream)
-	{
-		FSOUND_Stream_Close(stream);
-		stream = NULL;
-	}
-	if (Data) { delete[] Data; Data = NULL; }
-}
-
-void C4MusicFileMP3::CheckIfPlaying()
-{
-	if (FSOUND_Stream_GetPosition(stream) >= (unsigned) FSOUND_Stream_GetLength(stream))
-		Application.MusicSystem.NotifySuccess();
-}
-
-void C4MusicFileMP3::SetVolume(int iLevel)
-{
-	FSOUND_SetVolume(Channel, (int) ((iLevel * 255) / 100));
-}
-
-/* Ogg Vobis */
-
-C4MusicFileOgg::C4MusicFileOgg()
-		: stream(NULL), Data(NULL), Channel(-1), Playing(false)
-{
-
-}
-
-C4MusicFileOgg::~C4MusicFileOgg()
-{
-	Stop();
-}
-
-bool C4MusicFileOgg::Play(bool loop)
-{
-	// Load Song
-	size_t iFileSize;
-	if (!C4Group_ReadFile(FileName, &Data, &iFileSize))
-		return false;
-
-	// init fsound
-	int loop_flag = loop ? FSOUND_LOOP_NORMAL : 0;
-	stream = FSOUND_Stream_Open(Data, FSOUND_LOADMEMORY | FSOUND_NORMAL | FSOUND_2D | loop_flag, 0, iFileSize);
-
-	if (!stream) return false;
-
-	// Play Song
-	Channel = FSOUND_Stream_Play(FSOUND_FREE, stream);
-	if (Channel == -1) return false;
-
-	// Set highest priority
-	if (!FSOUND_SetPriority(Channel, 255))
+	if (channel->setPriority(255) != FMOD_OK)
 		return false;
 
 	Playing = true;
 
-	FSOUND_Stream_SetEndCallback(stream, &C4MusicFileOgg::OnEnd, this);
+	// Actually start playing
+	channel->setPaused(false);
+	
+
 
 	return true;
 }
 
-// End Callback
-signed char __stdcall C4MusicFileOgg::OnEnd(FSOUND_STREAM* stream, void* buff, int length, void *param)
+void C4MusicFileFMOD::Stop(int fadeout_ms)
 {
-	C4MusicFileOgg* pFile = static_cast<C4MusicFileOgg*>(param);
-	pFile->Playing = false;
-	return 0;
-}
-
-void C4MusicFileOgg::Stop(int fadeout_ms)
-{
-	if (stream)
+	if (mod)
 	{
-		FSOUND_Stream_Close(stream);
-		stream = NULL;
+		mod->release();
+		mod = NULL;
+		channel = NULL;
 	}
 	if (Data) { delete[] Data; Data = NULL; }
+	RemTempFile();
 	Playing = false;
 }
 
-void C4MusicFileOgg::CheckIfPlaying()
+void C4MusicFileFMOD::CheckIfPlaying()
 {
-
+	// Check if still playing
+	if (mod && channel && Playing)
+	{
+		Playing = false;
+		// Sound must still be in channel...
+		FMOD::Sound *chan_sound;
+		if (channel->getCurrentSound(&chan_sound) == FMOD_OK)
+		{
+			if (chan_sound == mod)
+			{
+				// ...and not done yet
+				unsigned int chan_pos, song_len;
+				if (   channel->getPosition(&chan_pos, FMOD_TIMEUNIT_PCM) == FMOD_OK
+					&& mod->getLength(&song_len, FMOD_TIMEUNIT_PCM) == FMOD_OK)
+				{
+					if (chan_pos < song_len)
+						Playing = true;
+				}
+				
+			}
+		}
+	}
 	if (!Playing)
-		//if(FSOUND_Stream_GetPosition(stream) >= (unsigned) FSOUND_Stream_GetLength(stream))
 		Application.MusicSystem.NotifySuccess();
 }
 
-void C4MusicFileOgg::SetVolume(int iLevel)
+void C4MusicFileFMOD::SetVolume(int iLevel)
 {
-	FSOUND_SetVolume(Channel, (int) ((iLevel * 255) / 100));
+	if (channel)
+		channel->setVolume(BoundBy(float(iLevel)/100.0f, 0.0f, 1.0f));
 }
+
 
 #elif defined HAVE_LIBSDL_MIXER
 C4MusicFileSDL::C4MusicFileSDL():

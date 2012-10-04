@@ -553,8 +553,8 @@ void C4Application::Clear()
 	// gamepad clear
 	if (pGamePadControl) { delete pGamePadControl; pGamePadControl=NULL; }
 	// music system clear
-	MusicSystem.Clear();
 	SoundSystem.Clear();
+	MusicSystem.Clear();
 	RestoreVideoMode();
 	// Clear direct draw (late, because it's needed for e.g. Log)
 	if (pDraw) { delete pDraw; pDraw=NULL; }
@@ -624,6 +624,7 @@ void C4Application::GameTick()
 		break;
 	case C4AS_Startup:
 		// wait for the user to start a game
+		SoundSystem.Execute();
 		break;
 	case C4AS_StartGame:
 		// immediate progress to next state; OpenGame will enter HandleMessage-loops in startup and lobby!
