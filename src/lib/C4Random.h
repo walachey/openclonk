@@ -25,6 +25,7 @@
 #define INC_C4Random
 
 #include <ctime>
+#include <C4Network2.h>
 
 extern int RandomCount;
 extern unsigned int RandomHold;
@@ -40,7 +41,13 @@ inline void FixedRandom(DWORD dwSeed)
 #ifdef DEBUGREC
 int Random(int iRange);
 #else
-inline int Random(int iRange)
+
+inline void RandomHook(const char* file, const char* function, int line) {
+	LogF("%s:%d: %s - Random no %d", file, line, function, RandomCount+1);
+}
+
+#define Random(iRange) ([](int range, const char* function){RandomHook(__FILE__, function, __LINE__); return __Random(range);}(iRange, __FUNCTION__))
+inline int __Random(int iRange)
 {
 	RandomCount++;
 	if (iRange==0) return 0;
