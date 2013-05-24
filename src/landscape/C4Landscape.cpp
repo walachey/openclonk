@@ -885,7 +885,7 @@ bool C4Landscape::InsertDeadMaterial(int32_t mat, int32_t tx, int32_t ty)
 	{
 		int ox = tx + o[n][0];
 		int oy = ty + o[n][1];
-		if (ox >= 0 && ox < Width && oy >= 0 && oy < Height && _GetMat(ox, oy))
+		if (ox >= 0 && ox < Width && oy >= 0 && oy < Height && _GetMat(ox, oy) == mat)
 			if (!Random(n+1))
 				pix = _GetPix(ox, oy) % IFT;
 	}
