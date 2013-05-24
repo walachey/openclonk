@@ -42,11 +42,11 @@ inline void FixedRandom(DWORD dwSeed)
 int Random(int iRange);
 #else
 
-inline void RandomHook(const char* file, const char* function, int line) {
-	LogF("%s:%d: %s - Random no %d", file, line, function, RandomCount+1);
+inline void RandomHook(const char* file, const char* function, int line, int par) {
+	LogF("%s:%d: %s - Random(%d) %d", file, line, function, par, RandomCount+1);
 }
 
-#define Random(iRange) ([](int range, const char* function){RandomHook(__FILE__, function, __LINE__); return __Random(range);}(iRange, __FUNCTION__))
+#define Random(iRange) ([](int range, const char* function){RandomHook(__FILE__, function, __LINE__, range); return __Random(range);}(iRange, __FUNCTION__))
 inline int __Random(int iRange)
 {
 	RandomCount++;
