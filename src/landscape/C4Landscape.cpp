@@ -879,15 +879,16 @@ bool C4Landscape::InsertDeadMaterial(int32_t mat, int32_t tx, int32_t ty)
 		omat = GetMat(tx, ty);
 
 	// Check surroundings for inspiration for texture to use
-	int n = 0; int pix = -1;
-	if(tx > 0 && _GetMat(tx-1, ty) == mat)
-		if(!Random(++n)) pix = _GetPix(tx-1, ty) % IFT;
-	if(ty > 0 && _GetMat(tx, ty-1) == mat)
-		if(!Random(++n)) pix = _GetPix(tx, ty-1) % IFT;
-	if(tx+1 < Width && _GetMat(tx+1, ty) == mat)
-		if(!Random(++n)) pix = _GetPix(tx+1, ty) % IFT;
-	if(ty+1 < Height && _GetMat(tx, ty+1) == mat)
-		if(!Random(++n)) pix = _GetPix(tx, ty+1) % IFT;
+	int pix = -1;
+	int o[4][2] = {{-1,0},{0,-1},{1,0},{0,1}};
+	for (int n = 0; n < sizeof(o)/sizeof(o[0]); n++)
+	{
+		int ox = tx + o[n][0];
+		int oy = ty + o[n][1];
+		if (ox >= 0 && ox < Width && oy >= 0 && oy < Height && _GetMat(ox, oy))
+			if (!Random(n+1))
+				pix = _GetPix(ox, oy) % IFT;
+	}
 	if(pix < 0)
 		pix = Mat2PixColDefault(mat);
 
