@@ -59,6 +59,7 @@ void C4MassMoverSet::Clear()
 
 void C4MassMoverSet::Execute()
 {
+	STACKENTRY
 	C4MassMover *cmm;
 	// Init counts
 	Count=0;
@@ -129,6 +130,7 @@ void C4MassMover::Cease()
 
 bool C4MassMover::Execute()
 {
+	STACKENTRY
 	int32_t tx,ty;
 
 	// Lost target material

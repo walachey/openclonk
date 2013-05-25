@@ -46,3 +46,4 @@ int Random(int iRange)
 }
 #endif
 
+StackEntry* StackEntry::top(NULL);

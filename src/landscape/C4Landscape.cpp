@@ -320,6 +320,7 @@ bool C4Landscape::DoRelights()
 
 std::vector<int32_t> C4Landscape::GetRoundPolygon(int32_t x, int32_t y, int32_t size, int32_t smoothness) const
 {
+	STACKENTRY
 	/*
 	So what is this? It's basically a circle with the radius 'size'. The radius
 	is adjusted by two sin/cos waves. The random lies in the phase of the sin/cos
@@ -389,18 +390,21 @@ int32_t C4Landscape::DigFreeRect(int32_t tx, int32_t ty, int32_t wdt, int32_t hg
 
 int32_t C4Landscape::DigFree(int32_t tx, int32_t ty, int32_t rad, C4Object *by_object, bool no_dig2objects, bool no_instability_check)
 {
+	STACKENTRY
 	std::vector<int32_t> vertices(GetRoundPolygon(tx,ty,rad,80));
 	return DigFreeShape(&vertices[0],vertices.size(),by_object, no_dig2objects, no_instability_check);
 }
 
 void C4Landscape::BlastFree(int32_t tx, int32_t ty, int32_t rad, int32_t caused_by, C4Object *by_object, int32_t iMaxDensity)
 {
+	STACKENTRY
 	std::vector<int32_t> vertices(GetRoundPolygon(tx,ty,rad,30));
 	BlastFreeShape(&vertices[0],vertices.size(),by_object,caused_by,iMaxDensity);
 }
 
 void C4Landscape::ShakeFree(int32_t tx, int32_t ty, int32_t rad)
 {
+	STACKENTRY
 	std::vector<int32_t> vertices(GetRoundPolygon(tx,ty,rad,50));
 	ForPolygon(&vertices[0],vertices.size()/2,&C4Landscape::ShakeFreePix);
 }
@@ -806,6 +810,7 @@ int32_t C4Landscape::ExtractMaterial(int32_t fx, int32_t fy)
 
 bool C4Landscape::InsertMaterial(int32_t mat, int32_t *tx, int32_t *ty, int32_t vx, int32_t vy, bool query_only)
 {
+	STACKENTRY
 	assert(tx); assert(ty);
 	int32_t mdens;
 	if (!MatValid(mat)) return false;
@@ -869,6 +874,7 @@ bool C4Landscape::InsertMaterial(int32_t mat, int32_t *tx, int32_t *ty, int32_t 
 
 bool C4Landscape::InsertDeadMaterial(int32_t mat, int32_t tx, int32_t ty)
 {
+	STACKENTRY
 	// Check bounds
 	if (tx < 0 || ty < 0 || tx >= Width || ty >= Height)
 		return false;

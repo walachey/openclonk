@@ -25,10 +25,14 @@
 #define INC_C4Random
 
 #include <ctime>
+#include <string>
+#include <sstream>
 #include <C4Network2.h>
 
 extern int RandomCount;
 extern unsigned int RandomHold;
+
+using namespace std;
 
 inline void FixedRandom(DWORD dwSeed)
 {
@@ -38,12 +42,49 @@ inline void FixedRandom(DWORD dwSeed)
 	RandomCount=0;
 }
 
+class StackEntry
+{
+public:
+	static StackEntry *top;
+	const char* file;
+	const char* function;
+	int line;
+	StackEntry* child;
+	StackEntry* parent;
+	inline StackEntry(const char* file, const char* function, int line)
+		: file(file), function(function), line(line), child(NULL)
+	{
+		if (!top)
+		{
+			top = this;
+			parent = NULL;
+		}
+		else
+		{
+			StackEntry* p;
+			for (p = top; p && p->child; p = p->child);
+			parent = p;
+			p->child = this;
+		}
+	}
+	~StackEntry() {
+		if (this == top)
+			top = NULL;
+		else
+			parent->child = NULL;
+	}
+};
+
 #ifdef DEBUGREC
 int Random(int iRange);
 #else
 
-inline void RandomHook(const char* file, const char* function, int line, int par) {
-	LogF("%s:%d: %s - Random(%d) %d", file, line, function, par, RandomCount+1);
+inline void RandomHook(const char* file, const char* function, int line, int par)
+{
+	ostringstream stream;
+	for (auto e = StackEntry::top; e; e = e->child)
+		stream << e->function << " > ";
+	LogF("%s:%d: %sRandom(%d) %d", file, line, stream.str().c_str(), par, RandomCount+1);
 }
 
 #define Random(iRange) ([](int range, const char* function){RandomHook(__FILE__, function, __LINE__, range); return __Random(range);}(iRange, __FUNCTION__))
@@ -55,6 +96,8 @@ inline int __Random(int iRange)
 	return RandomHold % iRange;
 }
 #endif
+
+#define STACKENTRY StackEntry __STACK__ENTRY(__FILE__, __FUNCTION__, __LINE__);
 
 inline unsigned int SeededRandom(unsigned int iSeed, unsigned int iRange)
 {
