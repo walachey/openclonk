@@ -99,7 +99,7 @@ public:
 public:
 	C4StartupGraphics Graphics;
 
-	enum DialogID { SDID_Main=0, SDID_ScenSel, SDID_ScenSelNetwork, SDID_NetJoin, SDID_Options, SDID_About, SDID_PlrSel, SDID_Back };
+	enum DialogID { SDID_Main=0, SDID_ScenSel, SDID_ScenSelNetwork, SDID_NetJoin, SDID_Options, SDID_About, SDID_PlrSel, SDID_Mods, SDID_Back };
 
 private:
 	bool fInStartup{false}, fLastDlgWasBack;
@@ -118,6 +118,7 @@ protected:
 	friend class C4StartupNetDlg;
 	friend class C4StartupScenSelDlg;
 	friend class C4StartupOptionsDlg;
+	friend class C4StartupModsDlg;
 	friend class C4StartupAboutDlg;
 	friend class C4StartupPlrSelDlg;
 
