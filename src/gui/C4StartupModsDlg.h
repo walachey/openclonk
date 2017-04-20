@@ -20,6 +20,9 @@
 
 #include "gui/C4Startup.h"
 #include "network/C4InteractiveThread.h"
+#include "network/C4Network2Reference.h"
+
+class TiXmlElement;
 
 class C4StartupModsListEntry : public C4GUI::Window
 {
@@ -67,6 +70,7 @@ protected:
 	C4GUI::Element* GetNextLower(int32_t sortOrder); // returns the element before which this element should be inserted
 
 public:
+	void FromXML(const TiXmlElement *xml);
 	void ClearRef();    // del any ref/refclient/error data
 	
 	bool Execute(); // update stuff - if false is returned, the item is to be removed
@@ -125,7 +129,10 @@ protected:
 	{ DoOK(); return C4GUI::Edit::IR_Abort; }
 
 private:
-	void UpdateMasterserver(); // creates masterserver object if masterserver is enabled; destroy otherwise
+	// Deletes lingering updates etc.
+	void CancelRequest();
+
+	void QueryModList();
 	void UpdateList(bool fGotReference = false);
 	void UpdateCollapsed();
 	void UpdateSelection(bool fUpdateCollapsed);
@@ -133,7 +140,7 @@ private:
 	//void AddReferenceQuery(const char *szAddress, C4StartupNetListEntry::QueryType eQueryType); // add a ref searcher entry and start searching
 
 	// set during update information retrieval
-	bool fUpdateCheckPending;
+	std::unique_ptr<C4Network2HTTPClient> postClient;
 
 	// callback from C4Network2ReferenceClient
 	virtual void OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData);

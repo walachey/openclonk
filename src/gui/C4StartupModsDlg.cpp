@@ -24,6 +24,8 @@
 #include "graphics/C4GraphicsResource.h"
 #include "graphics/C4Draw.h"
 
+#include <tinyxml.h>
+
 // ----------- C4StartupNetListEntry -----------------------------------------------------------------------
 
 C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GUI::Element *pInsertBefore, C4StartupModsDlg *pModsDlg)
@@ -34,7 +36,7 @@ C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GU
 	// add icons - normal icons use small size, only animated netgetref uses full size
 	rctIconLarge.Set(0, 0, iHeight, iHeight);
 	int32_t iSmallIcon = iHeight * 2 / 3; rctIconSmall.Set((iHeight - iSmallIcon)/2, (iHeight - iSmallIcon)/2, iSmallIcon, iSmallIcon);
-	pIcon = new C4GUI::Icon(rctIconSmall, C4GUI::Ico_Host);
+	pIcon = new C4GUI::Icon(rctIconSmall, C4GUI::Ico_Definition);
 	AddElement(pIcon);
 	SetBounds(pIcon->GetBounds());
 	// add to listbox (will get resized horizontally and moved)
@@ -73,6 +75,32 @@ C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GU
 C4StartupModsListEntry::~C4StartupModsListEntry()
 {
 	ClearRef();
+}
+
+void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
+{
+	auto getSafeStringValue = [](const TiXmlElement *xml, const char *childName, std::string fallback="")
+	{
+		const TiXmlElement *child = xml->FirstChildElement(childName);
+		if (child == nullptr) return fallback;
+		const std::string value(child->GetText());
+		if (!value.empty()) return value;
+		return fallback;
+	};
+
+	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), getSafeStringValue(xml, "title", "???").c_str(), getSafeStringValue(xml, "author", "???").c_str());
+	std::string description = getSafeStringValue(xml, "description");
+	if (!description.empty())
+	{
+		if (description.size() > 42)
+		{
+			description.resize(42);
+			description += "...";
+		}
+		sInfoText[1].Format("%s", description.c_str());
+	}
+
+	UpdateText();
 }
 
 void C4StartupModsListEntry::DrawElement(C4TargetFacet &cgo)
@@ -227,7 +255,7 @@ bool C4StartupModsListEntry::KeywordMatch(const char *szMatch)
 
 // ----------- C4StartupNetDlg ---------------------------------------------------------------------------------
 
-C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), pMasterserverClient(nullptr), fIsCollapsed(false), fUpdatingList(false),  fUpdateCheckPending(false)
+C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), pMasterserverClient(nullptr), fIsCollapsed(false), fUpdatingList(false)
 {
 	// ctor
 	// key bindings
@@ -306,6 +334,7 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 
 C4StartupModsDlg::~C4StartupModsDlg()
 {
+	CancelRequest();
 	// disable notifies
 	Application.InteractiveThread.ClearCallback(Ev_HTTP_Response, this);
 
@@ -327,14 +356,14 @@ void C4StartupModsDlg::OnShown()
 {
 	// callback when shown: Start searching for games
 	C4StartupDlg::OnShown();
-	UpdateList();
-	UpdateMasterserver();
+	QueryModList();
 	OnSec1Timer();
 }
 
 void C4StartupModsDlg::OnClosed(bool fOK)
 {
 	// dlg abort: return to main screen
+	CancelRequest();
 	if (pMasterserverClient) { delete pMasterserverClient; pMasterserverClient=nullptr; }
 	if (!fOK) DoBack();
 }
@@ -349,24 +378,99 @@ C4GUI::Control *C4StartupModsDlg::GetDlgModeFocusControl()
 	return pGameSelList;
 }
 
-
-void C4StartupModsDlg::UpdateMasterserver()
+void C4StartupModsDlg::QueryModList()
 {
+	// Forward the filter-field to the server.
+	std::string searchQueryPostfix("");
+	if (pSearchFieldEdt->GetText())
+	{
+		const std::string searchText(pSearchFieldEdt->GetText());
+		if (searchText.size() > 0)
+		{
+			searchQueryPostfix = "?where={%22title%22:%22" + searchText + "%22}";
+		}
+	}
+
+	// Initialize connection.
+	postClient = std::make_unique<C4Network2HTTPClient>();
+	
+	if (!postClient->Init() || !postClient->SetServer(("frustrum.pictor.uberspace.de/larry/items" + searchQueryPostfix).c_str()))
+	{
+		assert(false);
+		return;
+	}
+	postClient->SetExpectedResponseType(C4Network2HTTPClient::ResponseType::XML);
+
+	// Do the actual request.
+	postClient->SetNotify(&Application.InteractiveThread);
+	Application.InteractiveThread.AddProc(postClient.get());
+	postClient->Query(nullptr, false); // Empty query.
+
 	/*pMasterserverClient = new C4StartupModsListEntry(pGameSelList, nullptr, this);
 	StdStrBuf strVersion; strVersion.Format("%d.%d", C4XVER1, C4XVER2);
 	StdStrBuf strQuery; strQuery.Format("%s?version=%s&platform=%s", Config.Network.GetLeagueServerAddress(), strVersion.getData(), C4_OS);
 	pMasterserverClient->SetRefQuery(strQuery.getData(), C4StartupNetListEntry::NRQT_Masterserver);*/
 }
 
+void C4StartupModsDlg::CancelRequest()
+{
+	if (!postClient.get()) return;
+	Application.InteractiveThread.RemoveProc(postClient.get());
+	postClient.reset();
+}
+
 void C4StartupModsDlg::UpdateList(bool fGotReference)
 {
-	// recursion check
-	if (fUpdatingList) return;
-	fUpdatingList = true;
+	Log("Tick");
+	// Already running a query?
+	if (postClient.get() != nullptr)
+	{
+		// Check whether the data has arrived yet.
+		if (!postClient->isBusy())
+		{
+			if (!postClient->isSuccess())
+			{
+				Log(postClient->GetError());
+				// Destroy client and try again later.
+				CancelRequest();
+				Log("Failed :((");
+				return;
+			}
+			Log("Received!");
+			Log(postClient->getResultString());
+
+			// Remove all existing items.
+			C4GUI::Element *pElem, *pNextElem = pGameSelList->GetFirst();
+			while ((pElem = pNextElem))
+			{
+				pNextElem = pElem->GetNext();
+				C4StartupModsListEntry *pEntry = static_cast<C4StartupModsListEntry *>(pElem);
+				delete pEntry;
+			}
+
+			TiXmlDocument xmlDocument;
+			xmlDocument.Parse(postClient->getResultString());
+
+			if (xmlDocument.Error())
+			{
+				Log(xmlDocument.ErrorDesc());
+				return;
+			}
+			const char * resourceElementName = "resource";
+			const TiXmlElement *root = xmlDocument.RootElement();
+			assert(strcmp(root->Value(), resourceElementName) != 0);
+
+			for (const TiXmlElement* e = root->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
+			{
+				C4StartupModsListEntry *pEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
+				pEntry->FromXML(e);
+			}
+		}
+	}
+	
 	pGameSelList->FreezeScrolling();
 	// Games display mask
-	const char *szGameMask = pSearchFieldEdt->GetText();
-	if (!szGameMask) szGameMask = "";
+	
 	// Update all child entries
 	bool fAnyRemoval = false;
 	C4GUI::Element *pElem, *pNextElem = pGameSelList->GetFirst();
@@ -470,7 +574,7 @@ bool C4StartupModsDlg::DoBack()
 void C4StartupModsDlg::DoRefresh()
 {
 	// restart masterserver query
-	UpdateMasterserver();
+	QueryModList();
 	// done; update stuff
 	fUpdatingList = false;
 	UpdateList();
@@ -484,3 +588,5 @@ void C4StartupModsDlg::OnSec1Timer()
 
 	UpdateList(false);
 }
+
+

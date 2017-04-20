@@ -586,6 +586,7 @@ IDS_MODS_INSTALL_DESC=Läd den ausgewählten Mod herunter und macht ihn im Spiel
 IDS_MODS_MODSLIST=Liste verfügbarer Mods
 IDS_MODS_NOINSTALL=Installation nicht möglich
 IDS_MODS_NOINSTALL_NOMOD=Kein Mod ausgewählt. Aus der Liste wählen!
+IDS_MODS_TITLE=%s <i><c 55ffffff>von %s</c></i>
 IDS_MSG_ALLOWSYOUTOJOINADIFFERENT=Erlaubt die Auswahl eines anderen Teams.
 IDS_MSG_ANTIALIASING_DESC=FSAA (MultiSampling)-Level einstellen
 IDS_MSG_ANUPDATETOVERSIONISAVAILA=Ein neues Update ist verfügbar. Soll das Update heruntergeladen und installiert werden?
