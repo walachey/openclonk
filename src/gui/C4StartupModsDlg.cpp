@@ -58,14 +58,21 @@ C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GU
 	rcLabelBounds.Hgt = iLineHgt;
 	for (int i=0; i<InfoLabelCount; ++i)
 	{
-		C4GUI::Label *pLbl;
-		rcLabelBounds.y = 1+i*(iLineHgt+2);
-		rcLabelBounds.Wdt = iThisWdt - rcLabelBounds.x - 1;
-		if (!i) rcLabelBounds.Wdt -= iLineHgt; // leave space for topright extra icon
-		AddElement(pLbl = pInfoLbl[i] = new C4GUI::Label("", rcLabelBounds, ALeft, C4GUI_CaptionFontClr));
-		// label will have collapsed due to no text: Repair it
-		pLbl->SetAutosize(false);
-		pLbl->SetBounds(rcLabelBounds);
+		const int alignments[] = { ALeft, ARight };
+		for (int c = 0; c < 2; ++c)
+		{
+			const int alignment = alignments[c];
+			rcLabelBounds.y = 1 + i*(iLineHgt + 2);
+			rcLabelBounds.Wdt = iThisWdt - rcLabelBounds.x - 1;
+			C4GUI::Label * const pLbl = new C4GUI::Label("", rcLabelBounds, alignment, C4GUI_CaptionFontClr);
+			if (alignment == ALeft) pInfoLbl[i] = pLbl;
+			else if (alignment == ARight) pInfoLabelsRight[i] = pLbl;
+			else assert(false);
+			AddElement(pLbl);
+			// label will have collapsed due to no text: Repair it
+			pLbl->SetAutosize(false);
+			pLbl->SetBounds(rcLabelBounds);
+		}
 	}
 	// update small state, which will resize this to a small entry
 	UpdateSmallState();
@@ -100,6 +107,33 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 		sInfoText[1].Format("%s", description.c_str());
 	}
 
+	UpdateText();
+}
+
+void C4StartupModsListEntry::MakeInfoEntry()
+{
+	const_cast<C4Facet &>(reinterpret_cast<const C4Facet &>(pIcon->GetFacet()))
+		= (const C4Facet &)C4Startup::Get()->Graphics.fctNetGetRef;
+	pIcon->SetAnimated(true, 1);
+	pIcon->SetBounds(rctIconLarge);
+
+	// set info
+	sInfoText[0].Copy(LoadResStr("IDS_MODS_SEARCHING"));
+	UpdateSmallState(); UpdateText();
+}
+
+void C4StartupModsListEntry::OnNoResultsFound()
+{
+	pIcon->SetAnimated(false, 1);
+	sInfoText[0].Copy(LoadResStr("IDS_MODS_SEARCH_NORESULTS"));
+	UpdateText();
+}
+
+void C4StartupModsListEntry::OnError(std::string message)
+{
+	pIcon->SetAnimated(false, 1);
+	sInfoText[0].Copy(LoadResStr("IDS_MODS_SEARCH_ERROR"));
+	sInfoText[1].Copy(message.c_str());
 	UpdateText();
 }
 
@@ -160,7 +194,11 @@ void C4StartupModsListEntry::UpdateSmallState()
 	bool fNewIsSmall = !sInfoText[2].getLength() || fIsCollapsed;
 	if (fNewIsSmall == fIsSmall) return;
 	fIsSmall = fNewIsSmall;
-	for (int i=2; i<InfoLabelCount; ++i) pInfoLbl[i]->SetVisibility(!fIsSmall);
+	for (int i = 2; i < InfoLabelCount; ++i)
+	{
+		pInfoLbl[i]->SetVisibility(!fIsSmall);
+		pInfoLabelsRight[i]->SetVisibility(!fIsSmall);
+	}
 	UpdateEntrySize();
 }
 
@@ -168,16 +206,22 @@ void C4StartupModsListEntry::UpdateEntrySize()
 {
 	if(fVisible) {
 		// restack all labels by their size
-		int32_t iLblCnt = (fIsSmall ? 2 : InfoLabelCount), iY=1;
-		for (int i=0; i<iLblCnt; ++i)
+		const int32_t iLblCnt = (fIsSmall ? 2 : InfoLabelCount);
+		for (int c = 0; c < 2; ++c)
 		{
-			C4Rect rcBounds = pInfoLbl[i]->GetBounds();
-			rcBounds.y = iY;
+			int iY = 1;
+			C4GUI::Label **labelList = (c == 0) ? pInfoLbl : pInfoLabelsRight;
+			for (int i = 0; i < iLblCnt; ++i)
+			{
+				C4Rect rcBounds = labelList[i]->GetBounds();
+				rcBounds.y = iY;
 				iY += rcBounds.Hgt + 2;
-		pInfoLbl[i]->SetBounds(rcBounds);
+				pInfoLbl[i]->SetBounds(rcBounds);
+			}
+			// Resize this control according to the labels on the left.
+			if (c == 0)
+				GetBounds().Hgt = iY - 1;
 		}
-		// resize this control
-		GetBounds().Hgt = iY-1;
 	} else GetBounds().Hgt = 0;
 	UpdateSize();
 }
@@ -255,7 +299,7 @@ bool C4StartupModsListEntry::KeywordMatch(const char *szMatch)
 
 // ----------- C4StartupNetDlg ---------------------------------------------------------------------------------
 
-C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), pMasterserverClient(nullptr), fIsCollapsed(false), fUpdatingList(false)
+C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), pMasterserverClient(nullptr), fIsCollapsed(false)
 {
 	// ctor
 	// key bindings
@@ -380,6 +424,11 @@ C4GUI::Control *C4StartupModsDlg::GetDlgModeFocusControl()
 
 void C4StartupModsDlg::QueryModList()
 {
+	// Clear the list and add an info entry.
+	ClearList();
+	C4StartupModsListEntry *infoEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
+	infoEntry->MakeInfoEntry();
+
 	// Forward the filter-field to the server.
 	std::string searchQueryPostfix("");
 	if (pSearchFieldEdt->GetText())
@@ -392,9 +441,10 @@ void C4StartupModsDlg::QueryModList()
 	}
 
 	// Initialize connection.
+	queryWasSuccessful = false;
 	postClient = std::make_unique<C4Network2HTTPClient>();
 	
-	if (!postClient->Init() || !postClient->SetServer(("frustrum.pictor.uberspace.de/larry/items" + searchQueryPostfix).c_str()))
+	if (!postClient->Init() || !postClient->SetServer(("frustrum.pictor.uberspace.de/larry/api/items" + searchQueryPostfix).c_str()))
 	{
 		assert(false);
 		return;
@@ -419,34 +469,40 @@ void C4StartupModsDlg::CancelRequest()
 	postClient.reset();
 }
 
+void C4StartupModsDlg::ClearList()
+{
+	C4GUI::Element *pElem, *pNextElem = pGameSelList->GetFirst();
+	while ((pElem = pNextElem))
+	{
+		pNextElem = pElem->GetNext();
+		C4StartupModsListEntry *pEntry = static_cast<C4StartupModsListEntry *>(pElem);
+		delete pEntry;
+	}
+}
+
 void C4StartupModsDlg::UpdateList(bool fGotReference)
 {
-	Log("Tick");
 	// Already running a query?
 	if (postClient.get() != nullptr)
 	{
 		// Check whether the data has arrived yet.
 		if (!postClient->isBusy())
 		{
+			// At this point we can assert that the list contains only one child - the info field.
+			C4StartupModsListEntry *infoEntry = static_cast<C4StartupModsListEntry*> (pGameSelList->GetFirst());
+			assert(infoEntry != nullptr);
+
 			if (!postClient->isSuccess())
 			{
 				Log(postClient->GetError());
+				infoEntry->OnError(postClient->GetError());
 				// Destroy client and try again later.
 				CancelRequest();
-				Log("Failed :((");
 				return;
 			}
 			Log("Received!");
 			Log(postClient->getResultString());
-
-			// Remove all existing items.
-			C4GUI::Element *pElem, *pNextElem = pGameSelList->GetFirst();
-			while ((pElem = pNextElem))
-			{
-				pNextElem = pElem->GetNext();
-				C4StartupModsListEntry *pEntry = static_cast<C4StartupModsListEntry *>(pElem);
-				delete pEntry;
-			}
+			queryWasSuccessful = true;
 
 			TiXmlDocument xmlDocument;
 			xmlDocument.Parse(postClient->getResultString());
@@ -454,17 +510,37 @@ void C4StartupModsDlg::UpdateList(bool fGotReference)
 			if (xmlDocument.Error())
 			{
 				Log(xmlDocument.ErrorDesc());
+				CancelRequest();
+				infoEntry->OnError(xmlDocument.ErrorDesc());
 				return;
 			}
 			const char * resourceElementName = "resource";
 			const TiXmlElement *root = xmlDocument.RootElement();
 			assert(strcmp(root->Value(), resourceElementName) != 0);
 
+			int newElementCount = 0;
 			for (const TiXmlElement* e = root->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
 			{
 				C4StartupModsListEntry *pEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
 				pEntry->FromXML(e);
+				++newElementCount;
 			}
+
+			// Nothing found? Notify!
+			if (newElementCount == 0)
+				infoEntry->OnNoResultsFound();
+			else
+				delete infoEntry;
+
+			CancelRequest();
+		}
+	}
+	else // Not running a query.
+	{
+		if (!queryWasSuccessful) // Last query failed?
+		{
+			QueryModList();
+			return;
 		}
 	}
 	
@@ -512,7 +588,6 @@ void C4StartupModsDlg::UpdateList(bool fGotReference)
 		UpdateCollapsed();
 	}
 
-	fUpdatingList = false;
 	// done; selection might have changed
 	pGameSelList->UnFreezeScrolling();
 	UpdateSelection(false);
@@ -530,8 +605,6 @@ void C4StartupModsDlg::UpdateCollapsed()
 
 void C4StartupModsDlg::UpdateSelection(bool fUpdateCollapsed)
 {
-	// not during list updates - list update call will do this
-	if (fUpdatingList) return;
 	// in collapsed view, updating the selection may uncollapse something
 	if (fIsCollapsed && fUpdateCollapsed) UpdateCollapsed();
 }
@@ -545,7 +618,7 @@ bool C4StartupModsDlg::DoOK()
 {
 	if (GetFocus() == pSearchFieldEdt)
 	{
-		UpdateList();
+		QueryModList();
 		return true;
 	}
 	// get currently selected item
@@ -576,7 +649,6 @@ void C4StartupModsDlg::DoRefresh()
 	// restart masterserver query
 	QueryModList();
 	// done; update stuff
-	fUpdatingList = false;
 	UpdateList();
 }
 

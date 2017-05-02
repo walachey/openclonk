@@ -77,6 +77,11 @@ public:
 	void UpdateCollapsed(bool fToCollapseValue);
 	void SetVisibility(bool fToValue);
 
+	// There is a special entry that conveys status information.
+	void MakeInfoEntry();
+	void OnNoResultsFound();
+	void OnError(std::string message);
+
 	const char *GetError() { return fError ? sError.getData() : nullptr; } // return error message, if any is set
 	//C4Network2Reference *GrabReference(); // grab the reference so it won't be deleted when this item is removed
 	//C4Network2Reference *GetReference() const { return pRef; } // have a look at the reference
@@ -102,7 +107,8 @@ private:
 	C4GUI::Edit *pSearchFieldEdt;
 	C4StartupModsListEntry *pMasterserverClient; // set if masterserver query is enabled: Checks clonk.de for new games
 	bool fIsCollapsed; // set if the number of games in the list requires them to be displayed in a condensed format
-	bool fUpdatingList; // set during list update - prevent selection update calls
+	// Whether the last query was successful. No re-fetching will be done.
+	bool queryWasSuccessful = false;
 
 protected:
 	virtual bool HasBackground() { return false; }
@@ -133,6 +139,7 @@ private:
 	void CancelRequest();
 
 	void QueryModList();
+	void ClearList();
 	void UpdateList(bool fGotReference = false);
 	void UpdateCollapsed();
 	void UpdateSelection(bool fUpdateCollapsed);
