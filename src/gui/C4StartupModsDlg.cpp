@@ -95,6 +95,7 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 		return fallback;
 	};
 
+	sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"), getSafeStringValue(xml, "downloads", "0").c_str());
 	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), getSafeStringValue(xml, "title", "???").c_str(), getSafeStringValue(xml, "author", "???").c_str());
 	std::string description = getSafeStringValue(xml, "description");
 	if (!description.empty())
@@ -156,7 +157,11 @@ void C4StartupModsListEntry::ClearRef()
 	fError = false;
 	sError.Clear();
 	int32_t i;
-	for (i=0; i<InfoLabelCount; ++i) sInfoText[i].Clear();
+	for (i = 0; i < InfoLabelCount; ++i)
+	{
+		sInfoText[i].Clear();
+		sInfoTextRight[i].Clear();
+	}
 	InvalidateStatusIcons();
 	fIsEnabled = true;
 	fIsImportant = false;
@@ -239,26 +244,32 @@ void C4StartupModsListEntry::UpdateText()
 		pInfoIcons[i]->SetToolTip(nullptr);
 	}
 	// text to labels
-	for (i=0; i<InfoLabelCount; ++i)
+	for (int c = 0; c < 2; ++c)
 	{
-		int iAvailableWdt = GetClientRect().Wdt - pInfoLbl[i]->GetBounds().x - 1;
-		if (!i) iAvailableWdt -= sx;
-		StdStrBuf BrokenText;
-		pUseFont->BreakMessage(sInfoText[i].getData(), iAvailableWdt, &BrokenText, true);
-		int32_t iHgt, iWdt;
-		if (pUseFont->GetTextExtent(BrokenText.getData(), iWdt, iHgt, true))
+		C4GUI::Label **infoLabels = (c == 0) ? pInfoLbl : pInfoLabelsRight;
+		StdStrBuf *infoTexts = (c == 0) ? sInfoText : sInfoTextRight;
+		for (i = 0; i < InfoLabelCount; ++i)
 		{
-			if ((pInfoLbl[i]->GetBounds().Hgt != iHgt) || (pInfoLbl[i]->GetBounds().Wdt != iAvailableWdt))
+			C4GUI::Label *infoLabel = infoLabels[i];
+			int iAvailableWdt = GetClientRect().Wdt - infoLabel->GetBounds().x - 1;
+			if (!i) iAvailableWdt -= sx;
+			StdStrBuf BrokenText;
+			pUseFont->BreakMessage(infoTexts[i].getData(), iAvailableWdt, &BrokenText, true);
+			int32_t iHgt, iWdt;
+			if (pUseFont->GetTextExtent(BrokenText.getData(), iWdt, iHgt, true))
 			{
-				C4Rect rcBounds = pInfoLbl[i]->GetBounds();
-				rcBounds.Wdt = iAvailableWdt;
-				rcBounds.Hgt = iHgt;
-				pInfoLbl[i]->SetBounds(rcBounds);
-				fRestackElements = true;
+				if ((infoLabel->GetBounds().Hgt != iHgt) || (infoLabel->GetBounds().Wdt != iAvailableWdt))
+				{
+					C4Rect rcBounds = infoLabel->GetBounds();
+					rcBounds.Wdt = iAvailableWdt;
+					rcBounds.Hgt = iHgt;
+					infoLabel->SetBounds(rcBounds);
+					fRestackElements = true;
+				}
 			}
+			infoLabel->SetText(BrokenText.getData());
+			infoLabel->SetColor(fIsEnabled ? C4GUI_MessageFontClr : C4GUI_InactMessageFontClr);
 		}
-		pInfoLbl[i]->SetText(BrokenText.getData());
-		pInfoLbl[i]->SetColor(fIsEnabled ? C4GUI_MessageFontClr : C4GUI_InactMessageFontClr);
 	}
 	if (fRestackElements) UpdateEntrySize();
 }

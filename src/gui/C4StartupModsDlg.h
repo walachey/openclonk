@@ -41,7 +41,8 @@ private:
 	StdStrBuf sError;
 
 	C4GUI::Icon *pIcon;       // scenario icon
-	C4GUI::Label *pInfoLbl[InfoLabelCount]; // info labels for reference or query
+	C4GUI::Label *pInfoLbl[InfoLabelCount]; // info labels for reference or query; left side
+	C4GUI::Label *pInfoLabelsRight[InfoLabelCount]; // info labels on the right side
 	C4GUI::Icon *pInfoIcons[MaxInfoIconCount]; // right-aligned status icons at topright position
 	int32_t iInfoIconCount;
 	int32_t iSortOrder;
@@ -53,6 +54,7 @@ private:
 	C4Rect rctIconLarge;    // bounds for large icon
 
 	StdStrBuf sInfoText[InfoLabelCount];
+	StdStrBuf sInfoTextRight[InfoLabelCount];
 
 	void SetError(const char *szErrorText);      // change secondary label to error label, mark error and set a removal timer
 	//C4StartupModsListEntry *AddReference(C4Network2Reference *pAddRef, C4GUI::Element *pInsertBefore); // add a reference list item to the same list
