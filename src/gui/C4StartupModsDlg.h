@@ -132,6 +132,8 @@ protected:
 	void OnInstallModBtn(C4GUI::Control *btn) { DoOK(); }
 	void OnSelChange(class C4GUI::Element *pEl) { UpdateSelection(true); }
 	void OnSelDblClick(class C4GUI::Element *pEl) { DoOK(); }
+	void OnSortComboFill(C4GUI::ComboBox_FillCB *pFiller);
+	bool OnSortComboSelChange(C4GUI::ComboBox *pForCombo, int32_t idNewSelection);
 	//void OnBtnUpdate(C4GUI::Control *btn);
 	C4GUI::Edit::InputResult OnSearchFieldEnter(C4GUI::Edit *edt, bool fPasting, bool fPastingMore)
 	{ DoOK(); return C4GUI::Edit::IR_Abort; }
@@ -154,6 +156,15 @@ private:
 	// callback from C4Network2ReferenceClient
 	virtual void OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData);
 
+	struct SortingOption
+	{
+		const char * key;
+		const char * titleAsc, * titleDesc;
+		SortingOption(const char * _key, const char * _titleAsc, const char * _titleDesc) :
+			key(_key), titleAsc(_titleAsc), titleDesc(_titleDesc) {}
+	};
+	std::vector<SortingOption> sortingOptions;
+	std::string sortKeySuffix = "";
 public:
 	bool DoOK(); // join currently selected item
 	bool DoBack(); // abort dialog

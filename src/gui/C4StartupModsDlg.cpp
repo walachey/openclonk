@@ -348,6 +348,31 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	C4GUI::ComponentAligner caGameList(pSheetGameList->GetContainedClientRect(), 0,0, false);
 	C4GUI::WoodenLabel *pGameListLbl; int32_t iCaptHgt = C4GUI::WoodenLabel::GetDefaultHeight(&::GraphicsResource.TextFont);
 	pGameListLbl = new C4GUI::WoodenLabel(LoadResStr("IDS_MODS_MODSLIST"), caGameList.GetFromTop(iCaptHgt), C4GUI_Caption2FontClr, &::GraphicsResource.TextFont, ALeft);
+	pSheetGameList->AddElement(pGameListLbl);
+
+	// precalculate space needed for sorting labels
+	int32_t maxSortLabelWidth = 0;
+	
+	sortingOptions =
+	{
+		{ "version", "IDS_MODS_SORT_RATING_UP", "IDS_MODS_SORT_RATING_DOWN" },
+		{ "title", "IDS_MODS_SORT_NAME_UP", "IDS_MODS_SORT_NAME_DOWN" },
+		{ "_created", "IDS_MODS_SORT_DATE_UP", "IDS_MODS_SORT_DATE_DOWN" },
+	};
+	// Translate all labels.
+	for (auto &option : sortingOptions)
+	{
+		int32_t iSortWdt = 100, iSortHgt;
+		for (auto label : { &SortingOption::titleAsc, &SortingOption::titleDesc })
+		{
+			option.*label = LoadResStr(option.*label);
+			// Get width of label and remember if it's the longest yet.
+			::GraphicsResource.TextFont.GetTextExtent(option.*label, iSortWdt, iSortHgt, true);
+			if (iSortWdt > maxSortLabelWidth)
+				maxSortLabelWidth = iSortWdt;
+		}
+	}
+
 	// search field
 	C4GUI::WoodenLabel *pSearchLbl;
 	const char *szSearchLblText = LoadResStr("IDS_NET_MSSEARCH"); // Text is the same as in the network view.
@@ -355,13 +380,20 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	::GraphicsResource.TextFont.GetTextExtent(szSearchLblText, iSearchWdt, iSearchHgt, true);
 	C4GUI::ComponentAligner caSearch(caGameList.GetFromTop(iSearchHgt), 0,0);
 	pSearchLbl = new C4GUI::WoodenLabel(szSearchLblText, caSearch.GetFromLeft(iSearchWdt+10), C4GUI_Caption2FontClr, &::GraphicsResource.TextFont);
-	const char *szSearchTip = LoadResStr("IDS_NET_MSSEARCH_DESC");
+	const char *szSearchTip = LoadResStr("IDS_MODS_SEARCH_DESC");
 	pSearchLbl->SetToolTip(szSearchTip);
 	pSheetGameList->AddElement(pSearchLbl);
-	pSearchFieldEdt = new C4GUI::CallbackEdit<C4StartupModsDlg>(caSearch.GetAll(), this, &C4StartupModsDlg::OnSearchFieldEnter);
+	pSearchFieldEdt = new C4GUI::CallbackEdit<C4StartupModsDlg>(caSearch.GetFromLeft(caSearch.GetWidth() - maxSortLabelWidth - 40), this, &C4StartupModsDlg::OnSearchFieldEnter);
 	pSearchFieldEdt->SetToolTip(szSearchTip);
 	pSheetGameList->AddElement(pSearchFieldEdt);
-	pSheetGameList->AddElement(pGameListLbl);
+
+	// Sorting options
+	C4GUI::ComponentAligner caSorting(caSearch.GetAll(), 0, 0);
+	auto pSortComboBox = new C4GUI::ComboBox(caSearch.GetAll());
+	pSortComboBox->SetComboCB(new C4GUI::ComboBox_FillCallback<C4StartupModsDlg>(this, &C4StartupModsDlg::OnSortComboFill, &C4StartupModsDlg::OnSortComboSelChange));
+	pSortComboBox->SetText(LoadResStr("IDS_MODS_SORT"));
+	pSheetGameList->AddElement(pSortComboBox);
+
 	pGameSelList = new C4GUI::ListBox(caGameList.GetFromTop(caGameList.GetHeight() - iCaptHgt));
 	pGameSelList->SetDecoration(true, nullptr, true, true);
 	pGameSelList->UpdateElementPositions();
@@ -449,6 +481,12 @@ void C4StartupModsDlg::QueryModList()
 		{
 			searchQueryPostfix = "?where={%22title%22:%22" + searchText + "%22}";
 		}
+	}
+
+	// Forward the sorting criterion to the server.
+	if (!sortKeySuffix.empty())
+	{
+		searchQueryPostfix += std::string(searchQueryPostfix.empty() ? "?" : "&") + "sort=" + sortKeySuffix;
 	}
 
 	// Initialize connection.
@@ -673,3 +711,28 @@ void C4StartupModsDlg::OnSec1Timer()
 }
 
 
+void C4StartupModsDlg::OnSortComboFill(C4GUI::ComboBox_FillCB *pFiller)
+{
+	int32_t counter = 0;
+	for (auto & option : sortingOptions)
+	{
+		// The labels were already translated earlier.
+		pFiller->AddEntry(option.titleAsc, counter++);
+		pFiller->AddEntry(option.titleDesc, counter++);
+	}
+}
+
+bool C4StartupModsDlg::OnSortComboSelChange(C4GUI::ComboBox *pForCombo, int32_t idNewSelection)
+{
+	const size_t selected = idNewSelection / 2;
+	const bool descending = idNewSelection % 2 == 1;
+	const std::string newSortKeySuffix = std::string(descending ? "-" : "") + sortingOptions[selected].key;
+	if (newSortKeySuffix == sortKeySuffix) return true;
+	sortKeySuffix = newSortKeySuffix;
+	// Update label.
+	const char *sortLabel = descending ? sortingOptions[selected].titleDesc : sortingOptions[selected].titleAsc;
+	pForCombo->SetText(sortLabel);
+	// Refresh view.
+	QueryModList();
+	return true;
+}
