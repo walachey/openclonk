@@ -26,6 +26,8 @@
 
 #include <tinyxml.h>
 
+const std::string C4StartupModsDlg::baseServerURL = "frustrum.pictor.uberspace.de/larry/api/";
+
 // ----------- C4StartupNetListEntry -----------------------------------------------------------------------
 
 C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GUI::Element *pInsertBefore, C4StartupModsDlg *pModsDlg)
@@ -95,8 +97,9 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 		return fallback;
 	};
 
+	title = getSafeStringValue(xml, "title", "???");
 	sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"), getSafeStringValue(xml, "downloads", "0").c_str());
-	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), getSafeStringValue(xml, "title", "???").c_str(), getSafeStringValue(xml, "author", "???").c_str());
+	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), title.c_str(), getSafeStringValue(xml, "author", "???").c_str());
 	std::string description = getSafeStringValue(xml, "description");
 	if (!description.empty())
 	{
@@ -109,6 +112,9 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 	}
 
 	UpdateText();
+
+	// Additional meta-information.
+	fileHandle = getSafeStringValue(xml, "file");
 }
 
 void C4StartupModsListEntry::MakeInfoEntry()
@@ -308,6 +314,99 @@ bool C4StartupModsListEntry::KeywordMatch(const char *szMatch)
 	return false;
 }
 
+C4StartupModsDownloader::C4StartupModsDownloader(C4StartupModsDlg *parent, const C4StartupModsListEntry *entry) : CStdTimerProc(30)
+{
+	this->parent = parent;
+
+	items.push_back({ entry->GetFileHandle(), entry->GetTitle() });
+
+	// Register timer.
+	Application.Add(this);
+}
+
+C4StartupModsDownloader::~C4StartupModsDownloader()
+{
+	Application.Remove(this);
+	CancelRequest();
+}
+
+void C4StartupModsDownloader::CancelRequest()
+{
+	if (!postClient.get()) return;
+	Application.InteractiveThread.RemoveProc(postClient.get());
+	postClient.reset();
+}
+
+void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
+{
+	assert(!items.empty());
+	std::string message = std::string("Downloading and installing ") + items[0].title + "...";
+	progressDialog = new C4GUI::ProgressDialog(message.c_str(), "Downloading...", 100, 0, C4GUI::Icons::Ico_Save);
+	parent->GetScreen()->ShowRemoveDlg(progressDialog);
+
+	postClient = std::make_unique<C4Network2HTTPClient>();
+
+	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + items[0].fileHandle).c_str()))
+	{
+		assert(false);
+		return;
+	}
+	postClient->SetExpectedResponseType(C4Network2HTTPClient::ResponseType::XML);
+
+	// Do the actual request.
+	postClient->SetNotify(&Application.InteractiveThread);
+	Application.InteractiveThread.AddProc(postClient.get());
+	postClient->Query(nullptr, false); // Empty query.
+}
+
+void C4StartupModsDownloader::CheckProgress()
+{
+	if (postClient.get() == nullptr) return;
+
+	// Update progress bar.
+	const size_t downloadedBytes = postClient->getDownloadedSize();
+	const size_t totalBytes = postClient->getTotalSize();
+	if (totalBytes)
+		progressDialog->SetProgress(100 * downloadedBytes / totalBytes);
+
+	if (!postClient->isBusy())
+	{
+		if (!postClient->isSuccess())
+		{
+			::pGUI->ShowMessage("Download failed", postClient->getResultString(), C4GUI::Ico_Error);
+			progressDialog->Close(false);
+			CancelRequest();
+			return;
+		}
+		else
+		{
+			progressDialog->SetTitle("Installing...", false);
+		}
+	}
+
+	if (!progressDialog->Execute())
+	{
+		delete progressDialog;
+		progressDialog = nullptr;
+		CancelRequest();
+	}
+
+	if (progressDialog->IsAborted())
+	{
+		CancelRequest();
+		return;
+	}
+}
+
+void C4StartupModsDownloader::RequestConfirmation()
+{
+	assert(!items.empty());
+	std::string message = std::string("Do you really want to install ") + items[0].title;
+	auto *callbackHandler = new C4GUI::CallbackHandler<C4StartupModsDownloader>(this, &C4StartupModsDownloader::OnConfirmInstallation);
+	auto *dialog = new C4GUI::ConfirmationDialog(message.c_str(), "Confirm installation", callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
+	parent->GetScreen()->ShowRemoveDlg(dialog);
+}
+
 // ----------- C4StartupNetDlg ---------------------------------------------------------------------------------
 
 C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), pMasterserverClient(nullptr), fIsCollapsed(false)
@@ -493,7 +592,7 @@ void C4StartupModsDlg::QueryModList()
 	queryWasSuccessful = false;
 	postClient = std::make_unique<C4Network2HTTPClient>();
 	
-	if (!postClient->Init() || !postClient->SetServer(("frustrum.pictor.uberspace.de/larry/api/items" + searchQueryPostfix).c_str()))
+	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + "items" + searchQueryPostfix).c_str()))
 	{
 		assert(false);
 		return;
@@ -565,7 +664,7 @@ void C4StartupModsDlg::UpdateList(bool fGotReference)
 			}
 			const char * resourceElementName = "resource";
 			const TiXmlElement *root = xmlDocument.RootElement();
-			assert(strcmp(root->Value(), resourceElementName) != 0);
+			assert(strcmp(root->Value(), resourceElementName) == 0);
 
 			int newElementCount = 0;
 			for (const TiXmlElement* e = root->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
@@ -682,6 +781,15 @@ bool C4StartupModsDlg::DoOK()
 		  C4GUI::MessageDialog::btnOK,
 		  C4GUI::Ico_Error);
 		return true;
+	}
+	else // Show confirmation dialogue.
+	{
+		auto *elem = static_cast<C4StartupModsListEntry*> (pSelection);
+
+		if (downloader.get() != nullptr)
+			downloader.reset();
+		downloader = std::make_unique<C4StartupModsDownloader>(this, elem);
+		downloader->RequestConfirmation();
 	}
 	return true;
 }

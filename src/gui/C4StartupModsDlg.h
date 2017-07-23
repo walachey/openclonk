@@ -65,6 +65,10 @@ private:
 	void UpdateEntrySize();
 	void UpdateText(); // strings to labels
 
+	// Additional information that is required for downloading.
+	std::string fileHandle;
+	std::string title;
+
 protected:
 	virtual int32_t GetListItemTopSpacing() { return fIsCollapsed ? 5 : 10; }
 	virtual void DrawElement(C4TargetFacet &cgo);
@@ -91,6 +95,47 @@ public:
 	//bool IsSameAddress(const C4Network2Reference *pRef2); // check whether there is at least one matching address (address and port)
 	bool KeywordMatch(const char *szMatch); // check whether any of the reference contents match a given keyword
 
+	std::string GetTitle() const { return title; }
+	std::string GetFileHandle() const { return fileHandle; }
+};
+
+class C4StartupModsDlg;
+// This contains the downloading and installation logic.
+class C4StartupModsDownloader : private C4InteractiveThread::Callback, protected CStdTimerProc
+{
+public:
+	C4StartupModsDownloader(C4StartupModsDlg *parent, const C4StartupModsListEntry *entry);
+	~C4StartupModsDownloader();
+
+private:
+	struct ItemInfo
+	{
+		std::string fileHandle;
+		std::string title;
+	};
+	std::vector<ItemInfo> items;
+
+	C4StartupModsDlg * parent;
+
+	std::unique_ptr<C4Network2HTTPClient> postClient;
+	C4GUI::ProgressDialog *progressDialog = nullptr;
+
+	void CancelRequest();
+	void CheckProgress();
+
+	// Called by CStdTimerProc.
+	bool Execute(int, pollfd *) override
+	{
+		if (CheckAndReset())
+			CheckProgress();
+		return true;
+	}
+
+public:
+	void RequestConfirmation();
+	void OnConfirmInstallation(C4GUI::Element *element);
+	// callback from C4Network2ReferenceClient
+	virtual void OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData) {}
 };
 
 // startup dialog: Network game selection
@@ -99,6 +144,7 @@ class C4StartupModsDlg : public C4StartupDlg, private C4InteractiveThread::Callb
 public:
 	C4StartupModsDlg(); // ctor
 	~C4StartupModsDlg(); // dtor
+	static const std::string baseServerURL;
 
 private:
 	C4GUI::Tabular *pMainTabular;   // main tabular control: Contains game selection list and chat control
@@ -150,8 +196,10 @@ private:
 
 	//void AddReferenceQuery(const char *szAddress, C4StartupNetListEntry::QueryType eQueryType); // add a ref searcher entry and start searching
 
-	// set during update information retrieval
+	// Set during update information retrieval.
 	std::unique_ptr<C4Network2HTTPClient> postClient;
+	// Set during downloading of a mod.
+	std::unique_ptr<C4StartupModsDownloader> downloader;
 
 	// callback from C4Network2ReferenceClient
 	virtual void OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData);
