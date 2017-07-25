@@ -26,6 +26,8 @@
 
 #include <tinyxml.h>
 
+#include <fstream>
+
 const std::string C4StartupModsDlg::baseServerURL = "frustrum.pictor.uberspace.de/larry/api/";
 
 // ----------- C4StartupNetListEntry -----------------------------------------------------------------------
@@ -97,15 +99,24 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 		return fallback;
 	};
 
+	id = getSafeStringValue(xml, "_id", "");
+	bool installed = false;
+	if (!id.empty() && pModsDlg->modsDiscovery.IsDiscoveryFinished() && pModsDlg->modsDiscovery.IsModInstalled(id))
+	{
+		installed = true;
+		pIcon->SetIcon(C4GUI::Icons::Ico_Save);
+	}
+
 	title = getSafeStringValue(xml, "title", "???");
 	sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"), getSafeStringValue(xml, "downloads", "0").c_str());
 	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), title.c_str(), getSafeStringValue(xml, "author", "???").c_str());
-	std::string description = getSafeStringValue(xml, "description");
+	std::string description = installed ? std::string("<c 559955>") + LoadResStr("IDS_MODS_INSTALLED") + ".</c> " : "";
+	description += getSafeStringValue(xml, "description");
 	if (!description.empty())
 	{
-		if (description.size() > 42)
+		if (description.size() > 200)
 		{
-			description.resize(42);
+			description.resize(200);
 			description += "...";
 		}
 		sInfoText[1].Format("%s", description.c_str());
@@ -309,6 +320,44 @@ void C4StartupModsListEntry::SetError(const char *szErrorText)
 	pIcon->SetBounds(rctIconSmall);
 }
 
+void C4StartupModsLocalModDiscovery::Execute()
+{
+	ExecuteDiscovery();
+
+	StdThread::Stop();
+}
+
+void C4StartupModsLocalModDiscovery::ExecuteDiscovery()
+{
+	assert(!discoveryFinished);
+	// Check the mods directory for existing files.
+	const std::string path = std::string(Config.General.UserDataPath) + "mods";
+	for (DirectoryIterator iter(path.c_str()); *iter; ++iter)
+	{
+		const std::string filename(*iter);
+		
+		// No folder?
+		if (!DirectoryExists(filename.c_str())) continue;
+
+		const size_t lastSeparaterPosition = filename.find_last_of(DirectorySeparator);
+		if (lastSeparaterPosition == std::string::npos) continue;
+		const std::string leaf = filename.substr(lastSeparaterPosition + 1);
+		// The leaf is prefixed with "<item ID>_" if it's a mod directory.
+		const size_t idSeparatorPosition = leaf.find_first_of("_");
+		if (idSeparatorPosition == std::string::npos) continue;
+		const std::string id = leaf.substr(0, idSeparatorPosition);
+		if (id.empty()) continue;
+
+		ModsInfo mod;
+		mod.id = id;
+		mod.path = filename;
+
+		modsInformation[id] = mod;
+	}
+
+	discoveryFinished = true;
+}
+
 bool C4StartupModsListEntry::KeywordMatch(const char *szMatch)
 {
 	return false;
@@ -318,7 +367,7 @@ C4StartupModsDownloader::C4StartupModsDownloader(C4StartupModsDlg *parent, const
 {
 	this->parent = parent;
 
-	items.push_back({ entry->GetFileHandle(), entry->GetTitle() });
+	items.push_back({ entry->GetID(), entry->GetFileHandle(), entry->GetTitle() });
 
 	// Register timer.
 	Application.Add(this);
@@ -356,12 +405,13 @@ void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 	// Do the actual request.
 	postClient->SetNotify(&Application.InteractiveThread);
 	Application.InteractiveThread.AddProc(postClient.get());
-	postClient->Query(nullptr, false); // Empty query.
+	postClient->Query(nullptr, true); // Empty query for binary data.
 }
 
 void C4StartupModsDownloader::CheckProgress()
 {
 	if (postClient.get() == nullptr) return;
+	assert(progressDialog);
 
 	// Update progress bar.
 	const size_t downloadedBytes = postClient->getDownloadedSize();
@@ -381,20 +431,41 @@ void C4StartupModsDownloader::CheckProgress()
 		else
 		{
 			progressDialog->SetTitle("Installing...", false);
+
+			const std::string path = std::string(Config.General.UserDataPath) + "mods" + DirectorySeparator + \
+				items[0].modID + "_" + items[0].title;
+			
+			if (!CreatePath(path))
+			{
+				::pGUI->ShowMessage("Installation failed", "Could not create directory.", C4GUI::Ico_Error);
+				CancelRequest();
+				progressDialog->Close(false);
+				return; // todo
+			}
+
+			std::ofstream os(path + DirectorySeparator + "Wup.ocd", std::iostream::out | std::iostream::binary);
+			if (!os.good())
+			{
+				::pGUI->ShowMessage("Installation failed", "Could not create file.", C4GUI::Ico_Error);
+				CancelRequest();
+				progressDialog->Close(false);
+				return; // todo
+			}
+			
+			os.write(static_cast<const char*>(postClient->getResultBin().getData()), postClient->getDownloadedSize());
+			os.close();
+
+			CancelRequest();
+			progressDialog->Close(false);
+			return;
 		}
 	}
 
-	if (!progressDialog->Execute())
+	if (!progressDialog->Execute() || progressDialog->IsAborted())
 	{
 		delete progressDialog;
 		progressDialog = nullptr;
 		CancelRequest();
-	}
-
-	if (progressDialog->IsAborted())
-	{
-		CancelRequest();
-		return;
 	}
 }
 

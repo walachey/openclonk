@@ -582,6 +582,7 @@ IDS_MNU_UPPERBOARD=Titelleiste
 IDS_MNU_VIEWPORT=Sichtfenster
 IDS_MNU_WINDOWS=Fenster
 IDS_MODS_INSTALL=Installieren
+IDS_MODS_INSTALLED=Installiert
 IDS_MODS_INSTALL_DESC=Läd den ausgewählten Mod herunter und macht ihn im Spiel verfügbar.
 IDS_MODS_METAINFO=<c 55ffffff>Downloads: %s Bewertung: -/-</c>
 IDS_MODS_MODSLIST=Liste verfügbarer Mods

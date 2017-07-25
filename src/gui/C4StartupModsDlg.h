@@ -68,6 +68,7 @@ private:
 	// Additional information that is required for downloading.
 	std::string fileHandle;
 	std::string title;
+	std::string id;
 
 protected:
 	virtual int32_t GetListItemTopSpacing() { return fIsCollapsed ? 5 : 10; }
@@ -97,6 +98,7 @@ public:
 
 	std::string GetTitle() const { return title; }
 	std::string GetFileHandle() const { return fileHandle; }
+	std::string GetID() const { return id; }
 };
 
 class C4StartupModsDlg;
@@ -110,6 +112,7 @@ public:
 private:
 	struct ItemInfo
 	{
+		std::string modID;
 		std::string fileHandle;
 		std::string title;
 	};
@@ -138,6 +141,41 @@ public:
 	virtual void OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData) {}
 };
 
+class C4StartupModsLocalModDiscovery : public StdThread
+{
+protected:
+	void Execute() override;
+public:
+	C4StartupModsLocalModDiscovery() { StdThread::Start(); }
+
+	struct ModsInfo
+	{
+		std::string id;
+		std::string path;
+	};
+
+	bool IsDiscoveryFinished() const { return discoveryFinished; }
+	const std::map<std::string, ModsInfo> & GetAllModsInformation() const
+	{
+		assert(IsDiscoveryFinished());
+		return modsInformation;
+	}
+	const bool IsModInstalled(const std::string &id)
+	{
+		assert(IsDiscoveryFinished());
+		return modsInformation.count(id) != 0;
+	}
+	const ModsInfo & GetModInformation(const std::string &id)
+	{
+		assert(IsDiscoveryFinished());
+		return modsInformation[id];
+	}
+private:
+	void ExecuteDiscovery();
+	bool discoveryFinished = false;
+	std::map<std::string, ModsInfo> modsInformation;
+};
+
 // startup dialog: Network game selection
 class C4StartupModsDlg : public C4StartupDlg, private C4InteractiveThread::Callback, private C4ApplicationSec1Timer
 {
@@ -157,7 +195,8 @@ private:
 	bool fIsCollapsed; // set if the number of games in the list requires them to be displayed in a condensed format
 	// Whether the last query was successful. No re-fetching will be done.
 	bool queryWasSuccessful = false;
-
+	// Constructing this automatically checks for existing mods in a different thread.
+	C4StartupModsLocalModDiscovery modsDiscovery;
 protected:
 	virtual bool HasBackground() { return false; }
 	virtual void DrawElement(C4TargetFacet &cgo);
@@ -221,6 +260,8 @@ public:
 	//void OnReferenceEntryAdd(C4StartupNetListEntry *pEntry);
 
 	void OnSec1Timer(); // idle proc: update list
+
+	friend class C4StartupModsListEntry;
 };
 
 
