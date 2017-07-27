@@ -22,6 +22,8 @@
 #include "network/C4InteractiveThread.h"
 #include "network/C4Network2Reference.h"
 
+#include <tuple>
+
 class TiXmlElement;
 
 class C4StartupModsListEntry : public C4GUI::Window
@@ -116,8 +118,9 @@ public:
 	~C4StartupModsDownloader();
 
 private:
-	struct ModInfo
+	class ModInfo
 	{
+	public:
 		struct FileInfo
 		{
 			std::string handle;
@@ -127,13 +130,32 @@ private:
 
 		std::string modID;
 		std::string name;
+
+		ModInfo(std::string modID, std::string name) : modID(modID), name(name) {}
+		ModInfo() = delete;
+		ModInfo(const ModInfo &o) = delete;
+		~ModInfo() { CancelRequest(); }
+
 		std::vector<FileInfo> files;
+
+		void CheckProgress();
+		void CancelRequest();
+
+		std::tuple<size_t, size_t> GetProgress() const { return std::make_tuple(downloadedBytes, totalBytes); }
+		bool WasSuccessful() const { return successful; }
+		bool IsBusy() const { return postClient.get() != nullptr; }
+		std::string GetErrorMessage() const { if (errorMessage.empty()) return ""; return name + ": " + errorMessage; }
+	private:
+		bool successful{ false };
+		size_t downloadedBytes{ 0 };
+		size_t totalBytes{ 0 };
+		std::unique_ptr<C4Network2HTTPClient> postClient;
+		std::string errorMessage;
 	};
 	std::vector<ModInfo> items;
 
 	C4StartupModsDlg * parent;
 
-	std::unique_ptr<C4Network2HTTPClient> postClient;
 	C4GUI::ProgressDialog *progressDialog = nullptr;
 
 	void CancelRequest();

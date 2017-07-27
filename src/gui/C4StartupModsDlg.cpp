@@ -395,7 +395,7 @@ C4StartupModsDownloader::C4StartupModsDownloader(C4StartupModsDlg *parent, const
 	{
 		mod.files.emplace_back(ModInfo::FileInfo{ fileInfo.handle, fileInfo.name, fileInfo.size });
 	}
-	items.emplace_back(mod);
+	items.emplace_back(std::move(mod));
 
 	// Register timer.
 	Application.Add(this);
@@ -409,9 +409,12 @@ C4StartupModsDownloader::~C4StartupModsDownloader()
 
 void C4StartupModsDownloader::CancelRequest()
 {
-	if (!postClient.get()) return;
-	Application.InteractiveThread.RemoveProc(postClient.get());
-	postClient.reset();
+	for (auto & mod : items)
+		mod.CancelRequest();
+	items.resize(0);
+
+	delete progressDialog;
+	progressDialog = nullptr;
 }
 
 void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
@@ -422,79 +425,132 @@ void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 	std::string message = std::string("Downloading and installing ") + items[0].name + "...";
 	progressDialog = new C4GUI::ProgressDialog(message.c_str(), "Downloading...", 100, 0, C4GUI::Icons::Ico_Save);
 	parent->GetScreen()->ShowRemoveDlg(progressDialog);
-
-	postClient = std::make_unique<C4Network2HTTPClient>();
-
-	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + items[0].files[0].handle).c_str()))
-	{
-		assert(false);
-		return;
-	}
-	postClient->SetExpectedResponseType(C4Network2HTTPClient::ResponseType::XML);
-
-	// Do the actual request.
-	postClient->SetNotify(&Application.InteractiveThread);
-	Application.InteractiveThread.AddProc(postClient.get());
-	postClient->Query(nullptr, true); // Empty query for binary data.
+	
+	CheckProgress();
 }
 
-void C4StartupModsDownloader::CheckProgress()
+void C4StartupModsDownloader::ModInfo::CancelRequest()
 {
-	if (postClient.get() == nullptr) return;
-	assert(progressDialog);
+	if (!postClient.get()) return;
+	Application.InteractiveThread.RemoveProc(postClient.get());
+	postClient.reset();
+}
+
+void C4StartupModsDownloader::ModInfo::CheckProgress()
+{
+	// Determining success or starting a new download.
+	if (!errorMessage.empty()) return;
+	if (successful) return;
+
+	if (postClient.get() == nullptr) // Start new file?
+	{
+		postClient = std::make_unique<C4Network2HTTPClient>();
+
+		if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + files.back().handle).c_str()))
+		{
+			assert(false);
+			return;
+		}
+		postClient->SetExpectedResponseType(C4Network2HTTPClient::ResponseType::XML);
+
+		// Do the actual request.
+		postClient->SetNotify(&Application.InteractiveThread);
+		Application.InteractiveThread.AddProc(postClient.get());
+		postClient->Query(nullptr, true); // Empty query for binary data.
+	}
 
 	// Update progress bar.
-	const size_t downloadedBytes = postClient->getDownloadedSize();
-	const size_t totalBytes = postClient->getTotalSize();
-	if (totalBytes)
-		progressDialog->SetProgress(100 * downloadedBytes / totalBytes);
+	downloadedBytes = postClient->getDownloadedSize();
+	totalBytes = postClient->getTotalSize();
 
 	if (!postClient->isBusy())
 	{
 		if (!postClient->isSuccess())
 		{
-			::pGUI->ShowMessage("Download failed", postClient->getResultString(), C4GUI::Ico_Error);
-			progressDialog->Close(false);
 			CancelRequest();
 			return;
 		}
 		else
 		{
-			progressDialog->SetTitle("Installing...", false);
-
 			const std::string path = std::string(Config.General.UserDataPath) + "mods" + DirectorySeparator + \
-				items[0].modID + "_" + items[0].name;
-			
+				modID + "_" + name;
+
 			if (!CreatePath(path))
 			{
-				::pGUI->ShowMessage("Installation failed", "Could not create directory.", C4GUI::Ico_Error);
+				errorMessage = LoadResStr("IDS_MODS_NOINSTALL_CREATEDIR");
 				CancelRequest();
-				progressDialog->Close(false);
-				return; // todo
+				return;
 			}
 
-			std::ofstream os(path + DirectorySeparator + items[0].files[0].name, std::iostream::out | std::iostream::binary);
+			std::ofstream os(path + DirectorySeparator + files.back().name, std::iostream::out | std::iostream::binary);
 			if (!os.good())
 			{
-				::pGUI->ShowMessage("Installation failed", "Could not create file.", C4GUI::Ico_Error);
+				errorMessage = LoadResStr("IDS_MODS_NOINSTALL_CREATEFILE");
 				CancelRequest();
-				progressDialog->Close(false);
-				return; // todo
+				return;
 			}
-			
+
 			os.write(static_cast<const char*>(postClient->getResultBin().getData()), postClient->getDownloadedSize());
 			os.close();
 
 			CancelRequest();
-			progressDialog->Close(false);
+			
+			files.pop_back();
+			if (files.empty())
+				successful = true;
 			return;
 		}
+	}
+}
+
+void C4StartupModsDownloader::CheckProgress()
+{
+	assert(progressDialog);
+
+	// Let mods check their progress.
+	size_t downloadedBytes{ 0 }, totalBytes{ 0 };
+
+	bool anyNotFinished = false;
+
+	for (auto & mod : items)
+	{
+		mod.CheckProgress();
+		size_t downloaded, total;
+		std::tie(downloaded, total) = mod.GetProgress();
+		
+		if (mod.IsBusy())
+		{
+			downloadedBytes += downloaded;
+			totalBytes += total;
+			anyNotFinished = true;
+		}
+	}
+
+	if (totalBytes)
+		progressDialog->SetProgress(100 * downloadedBytes / totalBytes);
+
+	// All done?
+	if (!anyNotFinished)
+	{
+		// Report errors (all in one).
+		std::string errorMessage;
+		for (auto & mod : items)
+		{
+			const std::string modError = mod.GetErrorMessage();
+			if (!modError.empty())
+				errorMessage += "|" + modError;
+		}
+
+		if (!errorMessage.empty())
+		{
+			::pGUI->ShowMessageModal(errorMessage.c_str(), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Error);
+		}
+
+		CancelRequest();
 	}
 
 	if (!progressDialog->Execute() || progressDialog->IsAborted())
 	{
-		delete progressDialog;
-		progressDialog = nullptr;
 		CancelRequest();
 	}
 }
