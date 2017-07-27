@@ -27,7 +27,7 @@
 #include <tinyxml.h>
 
 #include <fstream>
-
+#include <sstream>
 const std::string C4StartupModsDlg::baseServerURL = "frustrum.pictor.uberspace.de/larry/api/";
 
 // ----------- C4StartupNetListEntry -----------------------------------------------------------------------
@@ -94,7 +94,9 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 	{
 		const TiXmlElement *child = xml->FirstChildElement(childName);
 		if (child == nullptr) return fallback;
-		const std::string value(child->GetText());
+		const char *nodeText = child->GetText();
+		if (nodeText == nullptr) return fallback;
+		const std::string value(nodeText);
 		if (!value.empty()) return value;
 		return fallback;
 	};
@@ -125,7 +127,27 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml)
 	UpdateText();
 
 	// Additional meta-information.
-	fileHandle = getSafeStringValue(xml, "file");
+	for (const TiXmlElement *filenode = xml->FirstChildElement("file"); filenode != nullptr; filenode = filenode->NextSiblingElement("file"))
+	{
+		const std::string handle = getSafeStringValue(filenode, "file", "");
+		const std::string name = getSafeStringValue(filenode, "name", "");
+		const std::string lengthString = getSafeStringValue(filenode, "length", "");
+
+		if (handle.empty() || name.empty() || lengthString.empty()) continue;
+		size_t length{ 0 };
+
+		try
+		{
+			length = std::stoi(lengthString);
+		}
+		catch (...)
+		{
+			continue;
+		}
+
+		files.emplace_back(FileInfo { handle, length, name });
+	}
+	
 }
 
 void C4StartupModsListEntry::MakeInfoEntry()
@@ -367,7 +389,12 @@ C4StartupModsDownloader::C4StartupModsDownloader(C4StartupModsDlg *parent, const
 {
 	this->parent = parent;
 
-	items.push_back({ entry->GetID(), entry->GetFileHandle(), entry->GetTitle() });
+	ModInfo mod{ entry->GetID(), entry->GetTitle() };
+	for (auto & fileInfo : entry->GetFileInfos())
+	{
+		mod.files.emplace_back(ModInfo::FileInfo{ fileInfo.handle, fileInfo.name, fileInfo.size });
+	}
+	items.emplace_back(mod);
 
 	// Register timer.
 	Application.Add(this);
@@ -389,13 +416,15 @@ void C4StartupModsDownloader::CancelRequest()
 void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 {
 	assert(!items.empty());
-	std::string message = std::string("Downloading and installing ") + items[0].title + "...";
+	assert(!items[0].files.empty());
+
+	std::string message = std::string("Downloading and installing ") + items[0].name + "...";
 	progressDialog = new C4GUI::ProgressDialog(message.c_str(), "Downloading...", 100, 0, C4GUI::Icons::Ico_Save);
 	parent->GetScreen()->ShowRemoveDlg(progressDialog);
 
 	postClient = std::make_unique<C4Network2HTTPClient>();
 
-	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + items[0].fileHandle).c_str()))
+	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + items[0].files[0].handle).c_str()))
 	{
 		assert(false);
 		return;
@@ -433,7 +462,7 @@ void C4StartupModsDownloader::CheckProgress()
 			progressDialog->SetTitle("Installing...", false);
 
 			const std::string path = std::string(Config.General.UserDataPath) + "mods" + DirectorySeparator + \
-				items[0].modID + "_" + items[0].title;
+				items[0].modID + "_" + items[0].name;
 			
 			if (!CreatePath(path))
 			{
@@ -443,7 +472,7 @@ void C4StartupModsDownloader::CheckProgress()
 				return; // todo
 			}
 
-			std::ofstream os(path + DirectorySeparator + "Wup.ocd", std::iostream::out | std::iostream::binary);
+			std::ofstream os(path + DirectorySeparator + items[0].files[0].name, std::iostream::out | std::iostream::binary);
 			if (!os.good())
 			{
 				::pGUI->ShowMessage("Installation failed", "Could not create file.", C4GUI::Ico_Error);
@@ -471,10 +500,37 @@ void C4StartupModsDownloader::CheckProgress()
 
 void C4StartupModsDownloader::RequestConfirmation()
 {
-	assert(!items.empty());
-	std::string message = std::string("Do you really want to install ") + items[0].title;
+	// Calculate total filesize to be downloaded.
+	size_t totalSize{ 0 };
+	for (auto &mod : items)
+	{
+		for (auto &file : mod.files)
+		{
+			totalSize += file.size;
+		}
+	}
+
+	if (totalSize == 0)
+	{
+		::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_NODATA"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Error);
+		return;
+	}
+
+	std::string filesizeString;
+	const size_t totalSizeMB = (totalSize / 1000 + 500) / 1000;
+	if (totalSizeMB == 0)
+	{
+		filesizeString = "<1MB";
+	}
+	else
+	{
+		filesizeString = std::string("~") + std::to_string(totalSizeMB) + "MB";
+	}
+
+	StdStrBuf confirmationMessage;
+	confirmationMessage.Format(LoadResStr("IDS_MODS_INSTALL_CONFIRM"), items[0].name.c_str(), filesizeString.c_str());
 	auto *callbackHandler = new C4GUI::CallbackHandler<C4StartupModsDownloader>(this, &C4StartupModsDownloader::OnConfirmInstallation);
-	auto *dialog = new C4GUI::ConfirmationDialog(message.c_str(), "Confirm installation", callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
+	auto *dialog = new C4GUI::ConfirmationDialog(confirmationMessage.getData(), "Confirm installation", callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
 	parent->GetScreen()->ShowRemoveDlg(dialog);
 }
 
@@ -677,7 +733,7 @@ void C4StartupModsDlg::QueryModList()
 
 	/*pMasterserverClient = new C4StartupModsListEntry(pGameSelList, nullptr, this);
 	StdStrBuf strVersion; strVersion.Format("%d.%d", C4XVER1, C4XVER2);
-	StdStrBuf strQuery; strQuery.Format("%s?version=%s&platform=%s", Config.Network.GetLeagueServerAddress(), strVersion.getData(), C4_OS);
+	StdStrBuf strQuery; strQuery.format("%s?version=%s&platform=%s", Config.Network.GetLeagueServerAddress(), strVersion.getData(), C4_OS);
 	pMasterserverClient->SetRefQuery(strQuery.getData(), C4StartupNetListEntry::NRQT_Masterserver);*/
 }
 

@@ -66,7 +66,13 @@ private:
 	void UpdateText(); // strings to labels
 
 	// Additional information that is required for downloading.
-	std::string fileHandle;
+	struct FileInfo
+	{
+		std::string handle;
+		size_t size;
+		std::string name;
+	};
+	std::vector<FileInfo> files;
 	std::string title;
 	std::string id;
 
@@ -97,7 +103,7 @@ public:
 	bool KeywordMatch(const char *szMatch); // check whether any of the reference contents match a given keyword
 
 	std::string GetTitle() const { return title; }
-	std::string GetFileHandle() const { return fileHandle; }
+	const std::vector<FileInfo> & GetFileInfos() const { return files; }
 	std::string GetID() const { return id; }
 };
 
@@ -110,13 +116,20 @@ public:
 	~C4StartupModsDownloader();
 
 private:
-	struct ItemInfo
+	struct ModInfo
 	{
+		struct FileInfo
+		{
+			std::string handle;
+			std::string name;
+			size_t size;
+		};
+
 		std::string modID;
-		std::string fileHandle;
-		std::string title;
+		std::string name;
+		std::vector<FileInfo> files;
 	};
-	std::vector<ItemInfo> items;
+	std::vector<ModInfo> items;
 
 	C4StartupModsDlg * parent;
 
