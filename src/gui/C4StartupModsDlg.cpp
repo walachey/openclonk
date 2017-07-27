@@ -28,6 +28,7 @@
 
 #include <fstream>
 #include <sstream>
+#include <regex>
 const std::string C4StartupModsDlg::baseServerURL = "frustrum.pictor.uberspace.de/larry/api/";
 
 // ----------- C4StartupNetListEntry -----------------------------------------------------------------------
@@ -702,10 +703,13 @@ void C4StartupModsDlg::QueryModList()
 	std::string searchQueryPostfix("");
 	if (pSearchFieldEdt->GetText())
 	{
-		const std::string searchText(pSearchFieldEdt->GetText());
+		std::string searchText(pSearchFieldEdt->GetText());
 		if (searchText.size() > 0)
 		{
-			searchQueryPostfix = "?where={%22title%22:%22" + searchText + "%22}";
+			// Sanity, escape quotes etc.
+			searchText = std::regex_replace(searchText, std::regex("\""), "\\\"");
+			searchText = std::regex_replace(searchText, std::regex("[ ]+"), "%20");
+			searchQueryPostfix = "?where={%22$text%22:{%22$search%22:%22" + searchText + "%22}}";
 		}
 	}
 
