@@ -21,95 +21,79 @@
 #include "gui/C4Startup.h"
 #include "network/C4InteractiveThread.h"
 #include "network/C4Network2Reference.h"
+#include "platform/StdSync.h"
 
 #include <tuple>
 
 class TiXmlElement;
+class TiXmlNode;
+class C4StartupModsDlg;
+class C4StartupModsListEntry;
 
-class C4StartupModsListEntry : public C4GUI::Window
+class C4StartupModsLocalModDiscovery : public StdThread
 {
-public:
-	C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GUI::Element *pInsertBefore, class C4StartupModsDlg *pModsDlg);
-	~C4StartupModsListEntry();
-
-	
-	enum { InfoLabelCount=5, MaxInfoIconCount=10 };
-
-private:
-	C4StartupModsDlg *pModsDlg;
-	C4GUI::ListBox *pList;
-
-	bool fError;                     // if set, the label was changed to an error message and no more updates are done
-	StdStrBuf sError;
-
-	C4GUI::Icon *pIcon;       // scenario icon
-	C4GUI::Label *pInfoLbl[InfoLabelCount]; // info labels for reference or query; left side
-	C4GUI::Label *pInfoLabelsRight[InfoLabelCount]; // info labels on the right side
-	C4GUI::Icon *pInfoIcons[MaxInfoIconCount]; // right-aligned status icons at topright position
-	int32_t iInfoIconCount;
-	int32_t iSortOrder;
-	bool fIsSmall;         // set if the item is in collapsed state
-	bool fIsCollapsed;     // set if the item is forced to collapsed state
-	bool fIsEnabled;       // if not set, the item is grayed out
-	bool fIsImportant;     // if set, the item is presented in yellow (lower priority than fIsEnabled)
-	C4Rect rctIconSmall;    // bounds for small icon
-	C4Rect rctIconLarge;    // bounds for large icon
-
-	StdStrBuf sInfoText[InfoLabelCount];
-	StdStrBuf sInfoTextRight[InfoLabelCount];
-
-	void SetError(const char *szErrorText);      // change secondary label to error label, mark error and set a removal timer
-	//C4StartupModsListEntry *AddReference(C4Network2Reference *pAddRef, C4GUI::Element *pInsertBefore); // add a reference list item to the same list
-	void InvalidateStatusIcons() { iInfoIconCount=0; } // schedule all current status icons for removal when UpdateText is called next
-	void AddStatusIcon(C4GUI::Icons eIcon, const char *szToolTip); // add a status icon with the specified tooltip
-
-	void UpdateSmallState();
-	void UpdateEntrySize();
-	void UpdateText(); // strings to labels
-
-	// Additional information that is required for downloading.
-	struct FileInfo
-	{
-		std::string handle;
-		size_t size;
-		std::string name;
-	};
-	std::vector<FileInfo> files;
-	std::string title;
-	std::string id;
-
 protected:
-	virtual int32_t GetListItemTopSpacing() { return fIsCollapsed ? 5 : 10; }
-	virtual void DrawElement(C4TargetFacet &cgo);
-
-	C4GUI::Element* GetNextLower(int32_t sortOrder); // returns the element before which this element should be inserted
-
+	void Execute() override;
 public:
-	void FromXML(const TiXmlElement *xml);
-	void ClearRef();    // del any ref/refclient/error data
-	
-	bool Execute(); // update stuff - if false is returned, the item is to be removed
-	void UpdateCollapsed(bool fToCollapseValue);
-	void SetVisibility(bool fToValue);
+	C4StartupModsLocalModDiscovery(C4StartupModsDlg *parent) :
+		discoveryFinishedEvent(true),
+		parent(parent)
+	{
+		StdThread::Start();
+	}
 
-	// There is a special entry that conveys status information.
-	void MakeInfoEntry();
-	void OnNoResultsFound();
-	void OnError(std::string message);
+	struct ModsInfo
+	{
+		std::string id;
+		std::string path;
+	};
 
-	const char *GetError() { return fError ? sError.getData() : nullptr; } // return error message, if any is set
-	//C4Network2Reference *GrabReference(); // grab the reference so it won't be deleted when this item is removed
-	//C4Network2Reference *GetReference() const { return pRef; } // have a look at the reference
-	//bool IsSameHost(const C4Network2Reference *pRef2); // check whether the reference was created by the same host as this one
-	//bool IsSameAddress(const C4Network2Reference *pRef2); // check whether there is at least one matching address (address and port)
-	bool KeywordMatch(const char *szMatch); // check whether any of the reference contents match a given keyword
+	bool IsDiscoveryFinished() const { return discoveryFinished; }
+	void WaitForDiscoveryFinished() { discoveryFinishedEvent.WaitFor(-1); }
 
-	std::string GetTitle() const { return title; }
-	const std::vector<FileInfo> & GetFileInfos() const { return files; }
-	std::string GetID() const { return id; }
+	const bool IsModInstalled(const std::string &id)
+	{
+		CStdLock lock(&modInformationModification);
+		assert(IsDiscoveryFinished());
+		return modsInformation.count(id) != 0;
+	}
+	ModsInfo GetModInformation(const std::string &id)
+	{
+		CStdLock lock(&modInformationModification);
+		assert(IsDiscoveryFinished());
+		return modsInformation[id];
+	}
+	void RemoveMod(const std::string &id)
+	{
+		CStdLock lock(&modInformationModification);
+		modsInformation.erase(id);
+	}
+	ModsInfo & AddMod(const std::string &id, const std::string &path)
+	{
+		CStdLock lock(&modInformationModification);
+		modsInformation[id] = ModsInfo{ id, path };
+		return modsInformation[id];
+	}
+
+	// Careful, lock for yourself when iterating through this.
+	const std::map<std::string, ModsInfo> & GetAllModInformation()
+	{
+		return modsInformation;
+	}
+	CStdLock Lock()
+	{
+		return std::move(CStdLock(&modInformationModification));
+	}
+private:
+	C4StartupModsDlg *parent;
+	void ExecuteDiscovery();
+	bool discoveryFinished = false;
+	CStdEvent discoveryFinishedEvent;
+	CStdCSec modInformationModification;
+
+	std::map<std::string, ModsInfo> modsInformation;
 };
 
-class C4StartupModsDlg;
 // This contains the downloading and installation logic.
 class C4StartupModsDownloader : private C4InteractiveThread::Callback, protected CStdTimerProc
 {
@@ -126,14 +110,14 @@ private:
 			std::string handle;
 			std::string name;
 			size_t size;
+			std::string sha1;
 		};
 
 		std::string modID;
 		std::string name;
 
-		ModInfo(std::string modID, std::string name) : modID(modID), name(name) {}
-		ModInfo() = delete;
-		ModInfo(const ModInfo &o) = delete;
+		ModInfo() = default;
+		ModInfo(std::string modID, std::string name, TiXmlNode *xml) : modID(modID), name(name), originalXMLNode(xml) {}
 		~ModInfo() { CancelRequest(); }
 
 		std::vector<FileInfo> files;
@@ -145,14 +129,16 @@ private:
 		bool WasSuccessful() const { return successful; }
 		bool IsBusy() const { return postClient.get() != nullptr; }
 		std::string GetErrorMessage() const { if (errorMessage.empty()) return ""; return name + ": " + errorMessage; }
+		std::string GetPath();
 	private:
 		bool successful{ false };
 		size_t downloadedBytes{ 0 };
 		size_t totalBytes{ 0 };
 		std::unique_ptr<C4Network2HTTPClient> postClient;
 		std::string errorMessage;
+		TiXmlNode *originalXMLNode;
 	};
-	std::vector<ModInfo> items;
+	std::vector<std::unique_ptr<ModInfo>> items;
 
 	C4StartupModsDlg * parent;
 
@@ -176,39 +162,96 @@ public:
 	virtual void OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData) {}
 };
 
-class C4StartupModsLocalModDiscovery : public StdThread
+class C4StartupModsListEntry : public C4GUI::Window
 {
-protected:
-	void Execute() override;
 public:
-	C4StartupModsLocalModDiscovery() { StdThread::Start(); }
+	C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GUI::Element *pInsertBefore, class C4StartupModsDlg *pModsDlg);
+	~C4StartupModsListEntry();
 
-	struct ModsInfo
-	{
-		std::string id;
-		std::string path;
-	};
 
-	bool IsDiscoveryFinished() const { return discoveryFinished; }
-	const std::map<std::string, ModsInfo> & GetAllModsInformation() const
-	{
-		assert(IsDiscoveryFinished());
-		return modsInformation;
-	}
-	const bool IsModInstalled(const std::string &id)
-	{
-		assert(IsDiscoveryFinished());
-		return modsInformation.count(id) != 0;
-	}
-	const ModsInfo & GetModInformation(const std::string &id)
-	{
-		assert(IsDiscoveryFinished());
-		return modsInformation[id];
-	}
+	enum { InfoLabelCount = 5, MaxInfoIconCount = 10 };
+
 private:
-	void ExecuteDiscovery();
-	bool discoveryFinished = false;
-	std::map<std::string, ModsInfo> modsInformation;
+	C4StartupModsDlg *pModsDlg;
+	C4GUI::ListBox *pList;
+
+	bool fError;                     // if set, the label was changed to an error message and no more updates are done
+	StdStrBuf sError;
+
+	C4GUI::Icon *pIcon;       // scenario icon
+	C4GUI::Label *pInfoLbl[InfoLabelCount]; // info labels for reference or query; left side
+	C4GUI::Label *pInfoLabelsRight[InfoLabelCount]; // info labels on the right side
+	C4GUI::Icon *pInfoIcons[MaxInfoIconCount]; // right-aligned status icons at topright position
+	int32_t iInfoIconCount;
+	int32_t iSortOrder;
+	bool fIsSmall;         // set if the item is in collapsed state
+	bool fIsCollapsed;     // set if the item is forced to collapsed state
+	bool fIsEnabled;       // if not set, the item is grayed out
+	bool fIsImportant;     // if set, the item is presented in yellow (lower priority than fIsEnabled)
+	bool isInfoEntry{ false };
+	C4Rect rctIconSmall;    // bounds for small icon
+	C4Rect rctIconLarge;    // bounds for large icon
+
+	StdStrBuf sInfoText[InfoLabelCount];
+	StdStrBuf sInfoTextRight[InfoLabelCount];
+
+	void SetError(const char *szErrorText);      // change secondary label to error label, mark error and set a removal timer
+												 //C4StartupModsListEntry *AddReference(C4Network2Reference *pAddRef, C4GUI::Element *pInsertBefore); // add a reference list item to the same list
+	void InvalidateStatusIcons() { iInfoIconCount = 0; } // schedule all current status icons for removal when UpdateText is called next
+	void AddStatusIcon(C4GUI::Icons eIcon, const char *szToolTip); // add a status icon with the specified tooltip
+
+	void UpdateSmallState();
+	void UpdateEntrySize();
+	void UpdateText(); // strings to labels
+					   // Additional information that is required for downloading.
+	struct FileInfo
+	{
+		std::string handle;
+		size_t size;
+		std::string name;
+		std::string sha1;
+	};
+	std::vector<FileInfo> files;
+	std::string title;
+	std::string id;
+	std::string description;
+	C4GUI::Icons defaultIcon{ C4GUI::Icons::Ico_Resource };
+
+	bool isInstalled;
+	// Used to write the element to a file in case the mod gets installed.
+	TiXmlNode *originalXMLElement{ nullptr };
+protected:
+	virtual int32_t GetListItemTopSpacing() { return fIsCollapsed ? 5 : 10; }
+	virtual void DrawElement(C4TargetFacet &cgo);
+
+	C4GUI::Element* GetNextLower(int32_t sortOrder); // returns the element before which this element should be inserted
+
+public:
+	void FromXML(const TiXmlElement *xml);
+	void ClearRef();    // del any ref/refclient/error data
+
+	bool Execute(); // update stuff - if false is returned, the item is to be removed
+	void UpdateCollapsed(bool fToCollapseValue);
+	void UpdateInstalledState(C4StartupModsLocalModDiscovery::ModsInfo *modInfo);
+	void SetVisibility(bool fToValue);
+
+	// There is a special entry that conveys status information.
+	void MakeInfoEntry();
+	void OnNoResultsFound();
+	void OnError(std::string message);
+
+	const char *GetError() { return fError ? sError.getData() : nullptr; } // return error message, if any is set
+																		   //C4Network2Reference *GrabReference(); // grab the reference so it won't be deleted when this item is removed
+																		   //C4Network2Reference *GetReference() const { return pRef; } // have a look at the reference
+																		   //bool IsSameHost(const C4Network2Reference *pRef2); // check whether the reference was created by the same host as this one
+																		   //bool IsSameAddress(const C4Network2Reference *pRef2); // check whether there is at least one matching address (address and port)
+	bool KeywordMatch(const char *szMatch); // check whether any of the reference contents match a given keyword
+
+	const TiXmlNode *GetXMLNode() const { return originalXMLElement; }
+	std::string GetTitle() const { return title; }
+	const std::vector<FileInfo> & GetFileInfos() const { return files; }
+	std::string GetID() const { return id; }
+	bool IsInstalled() const { return isInstalled; }
 };
 
 // startup dialog: Network game selection
@@ -224,7 +267,7 @@ private:
 	C4GUI::ListBox *pGameSelList;        // game selection listbox
 	C4KeyBinding *pKeyRefresh, *pKeyBack, *pKeyForward;
 	//C4GUI::CallbackButton<C4StartupNetDlg, C4GUI::IconButton> *btnUpdate;
-	C4GUI::Button *btnJoin, *btnRefresh;
+	C4GUI::Button *btnInstall, *btnRemove;
 	C4GUI::Edit *pSearchFieldEdt;
 	C4StartupModsListEntry *pMasterserverClient; // set if masterserver query is enabled: Checks clonk.de for new games
 	bool fIsCollapsed; // set if the number of games in the list requires them to be displayed in a condensed format
@@ -232,6 +275,8 @@ private:
 	bool queryWasSuccessful = false;
 	// Constructing this automatically checks for existing mods in a different thread.
 	C4StartupModsLocalModDiscovery modsDiscovery;
+	bool requiredSyncWithDiscovery{ false };
+
 protected:
 	virtual bool HasBackground() { return false; }
 	virtual void DrawElement(C4TargetFacet &cgo);
@@ -250,6 +295,8 @@ protected:
 	void OnBackBtn(C4GUI::Control *btn) { DoBack(); }
 	void OnRefreshBtn(C4GUI::Control *btn) { DoRefresh(); }
 	void OnInstallModBtn(C4GUI::Control *btn) { DoOK(); }
+	void OnShowInstalledBtn(C4GUI::Control *btn) { UpdateList(false, true); }
+	void OnUninstallModBtn(C4GUI::Control *btn) { CheckRemoveMod(); }
 	void OnSelChange(class C4GUI::Element *pEl) { UpdateSelection(true); }
 	void OnSelDblClick(class C4GUI::Element *pEl) { DoOK(); }
 	void OnSortComboFill(C4GUI::ComboBox_FillCB *pFiller);
@@ -264,10 +311,12 @@ private:
 
 	void QueryModList();
 	void ClearList();
-	void UpdateList(bool fGotReference = false);
+	void UpdateList(bool fGotReference = false, bool onlyWithLocalFiles = false);
+	void AddToList(std::vector<const TiXmlElement*> elements);
 	void UpdateCollapsed();
 	void UpdateSelection(bool fUpdateCollapsed);
-
+	void CheckRemoveMod();
+	void OnConfirmRemoveMod(C4GUI::Element *element);
 	//void AddReferenceQuery(const char *szAddress, C4StartupNetListEntry::QueryType eQueryType); // add a ref searcher entry and start searching
 
 	// Set during update information retrieval.
@@ -291,12 +340,13 @@ public:
 	bool DoOK(); // join currently selected item
 	bool DoBack(); // abort dialog
 	void DoRefresh(); // restart network search
-
+	void QueueSyncWithDiscovery() { requiredSyncWithDiscovery = true; }
 	//void OnReferenceEntryAdd(C4StartupNetListEntry *pEntry);
 
 	void OnSec1Timer(); // idle proc: update list
 
 	friend class C4StartupModsListEntry;
+	friend class C4StartupModsDownloader;
 };
 
 
