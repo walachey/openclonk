@@ -560,7 +560,7 @@ void C4StartupModsDownloader::ModInfo::CheckProgress()
 	}
 }
 
-void C4StartupModsDownloader::CheckProgress()
+void C4StartupModsDownloader::ExecuteCheckDownloadProgress()
 {
 	// Not even progressing yet?
 	if (progressDialog == nullptr) return;
@@ -621,6 +621,11 @@ void C4StartupModsDownloader::CheckProgress()
 }
 
 void C4StartupModsDownloader::RequestConfirmation()
+{
+	progressCallback = std::bind(&C4StartupModsDownloader::ExecuteRequestConfirmation, this);
+}
+
+void C4StartupModsDownloader::ExecuteRequestConfirmation()
 {
 	// To be able to check against the installed mods, the discovery needs to be finished.
 	parent->modsDiscovery.WaitForDiscoveryFinished();

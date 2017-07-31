@@ -23,6 +23,7 @@
 #include "network/C4Network2Reference.h"
 #include "platform/StdSync.h"
 
+#include <functional>
 #include <tuple>
 
 class TiXmlElement;
@@ -138,6 +139,7 @@ private:
 		std::string errorMessage;
 		TiXmlNode *originalXMLNode;
 	};
+private:
 	std::vector<std::unique_ptr<ModInfo>> items;
 
 	C4StartupModsDlg * parent;
@@ -145,13 +147,16 @@ private:
 	C4GUI::ProgressDialog *progressDialog = nullptr;
 
 	void CancelRequest();
-	void CheckProgress();
+	void ExecuteCheckDownloadProgress();
+	void ExecuteRequestConfirmation();
+
+	std::function<void(void)> progressCallback;
 
 	// Called by CStdTimerProc.
 	bool Execute(int, pollfd *) override
 	{
-		if (CheckAndReset())
-			CheckProgress();
+		if (CheckAndReset() && progressCallback)
+			progressCallback();
 		return true;
 	}
 
