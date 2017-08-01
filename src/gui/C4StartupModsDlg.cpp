@@ -470,7 +470,7 @@ void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 	parent->GetScreen()->ShowRemoveDlg(progressDialog);
 	progressDialog->SetDelOnClose(false);
 
-	CheckProgress();
+	progressCallback = std::bind(&C4StartupModsDownloader::ExecuteCheckDownloadProgress, this);
 }
 
 void C4StartupModsDownloader::ModInfo::CancelRequest()
