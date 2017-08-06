@@ -259,7 +259,7 @@ protected:
 
 public:
 	void FromXML(const TiXmlElement *xml, bool isLocalData = false);
-	const ModXMLData &GetModXMLData() const { return *modXMLData.get(); }
+	const ModXMLData &GetModXMLData() const { assert(modXMLData); return *modXMLData.get(); }
 	void ClearRef();    // del any ref/refclient/error data
 
 	bool Execute(); // update stuff - if false is returned, the item is to be removed
@@ -279,12 +279,12 @@ public:
 																		   //bool IsSameAddress(const C4Network2Reference *pRef2); // check whether there is at least one matching address (address and port)
 	bool KeywordMatch(const char *szMatch); // check whether any of the reference contents match a given keyword
 
-	const TiXmlNode *GetXMLNode() const { return modXMLData->originalXMLElement; }
-	std::string GetTitle() const { return modXMLData->title; }
-	const std::vector<ModXMLData::FileInfo> & GetFileInfos() const { return modXMLData->files; }
-	std::string GetID() const { return modXMLData->id; }
+	const TiXmlNode *GetXMLNode() const { return GetModXMLData().originalXMLElement; }
+	std::string GetTitle() const { return GetModXMLData().title; }
+	const std::vector<ModXMLData::FileInfo> & GetFileInfos() const { return GetModXMLData().files; }
+	std::string GetID() const { return GetModXMLData().id; }
 	bool IsInstalled() const { return isInstalled; }
-	bool IsLoadedFromLocal() const { return modXMLData->isLoadedFromLocal; }
+	bool IsLoadedFromLocal() const { return GetModXMLData().isLoadedFromLocal; }
 };
 
 // startup dialog: Network game selection
@@ -302,6 +302,10 @@ private:
 	//C4GUI::CallbackButton<C4StartupNetDlg, C4GUI::IconButton> *btnUpdate;
 	C4GUI::Button *btnInstall, *btnRemove;
 	C4GUI::Edit *pSearchFieldEdt;
+	struct _filters
+	{
+		C4GUI::CheckBox *showCompatible{ nullptr };
+	} filters;
 	C4StartupModsListEntry *pMasterserverClient; // set if masterserver query is enabled: Checks clonk.de for new games
 	bool fIsCollapsed; // set if the number of games in the list requires them to be displayed in a condensed format
 	// Whether the last query was successful. No re-fetching will be done.

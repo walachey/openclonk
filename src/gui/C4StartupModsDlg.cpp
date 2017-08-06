@@ -1021,6 +1021,18 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	buttonShowInstalled->SetText(LoadResStr("IDS_MODS_SHOWINSTALLED"));
 	AddElement(buttonShowInstalled);
 
+	{
+		auto filterLabel = new C4GUI::Label(LoadResStr("IDS_MODS_FILTER"), caConfigArea.GetFromTop(iSearchHgt), ALeft, C4GUI_Caption2FontClr, &::GraphicsResource.CaptionFont);
+		AddElement(filterLabel);
+	}
+	{
+		CStdFont *pUseFont = &(C4Startup::Get()->Graphics.BookFont);
+		const char *szText = LoadResStr("IDS_MODS_FILTER_COMPATIBLE");
+		int iWdt = 100, iHgt = 12;
+		C4GUI::CheckBox::GetStandardCheckBoxSize(&iWdt, &iHgt, szText, pUseFont);
+		filters.showCompatible = new C4GUI::CheckBox(caConfigArea.GetFromTop(iHgt, iWdt), szText, true);
+		AddElement(filters.showCompatible);
+	}
 	// initial focus
 	SetFocus(GetDlgModeFocusControl(), false);
 	
@@ -1085,8 +1097,9 @@ void C4StartupModsDlg::QueryModList()
 	C4StartupModsListEntry *infoEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
 	infoEntry->MakeInfoEntry();
 
+	// First, construct the 'where' part of the query.
 	// Forward the filter-field to the server.
-	std::string searchQueryPostfix("");
+	std::string whereClauseContents = "";
 	if (pSearchFieldEdt->GetText())
 	{
 		std::string searchText(pSearchFieldEdt->GetText());
@@ -1095,16 +1108,28 @@ void C4StartupModsDlg::QueryModList()
 			// Sanity, escape quotes etc.
 			searchText = std::regex_replace(searchText, std::regex("\""), "\\\"");
 			searchText = std::regex_replace(searchText, std::regex("[ ]+"), "%20");
-			searchQueryPostfix = "?where={%22$text%22:{%22$search%22:%22" + searchText + "%22}}";
+			whereClauseContents += "%22$text%22:{%22$search%22:%22" + searchText + "%22}";
 		}
 	}
+	// Additional filter options set?
+	if (filters.showCompatible->GetChecked())
+	{
+		const std::string versionTag = std::string("%22OpenClonk%20") + std::to_string(C4XVER1) + std::string(".0%22");
+		whereClauseContents += std::string(whereClauseContents.empty() ? "" : ",") + "%22tags%22:" + versionTag;
+	}
+	// 'where' part is done; close it.
+	std::string searchQueryPostfix("?");
+	if (!whereClauseContents.empty())
+		searchQueryPostfix += "where={" + whereClauseContents + "}&";
 
 	// Forward the sorting criterion to the server.
 	if (!sortKeySuffix.empty())
 	{
-		searchQueryPostfix += std::string(searchQueryPostfix.empty() ? "?" : "&") + "sort=" + sortKeySuffix;
+		searchQueryPostfix += "sort=" + sortKeySuffix + "&";
 	}
 
+
+	Log(searchQueryPostfix.c_str());
 	// Initialize connection.
 	queryWasSuccessful = false;
 	postClient = std::make_unique<C4Network2HTTPClient>();
