@@ -502,6 +502,7 @@ void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 	GetProgressDialog()->SetTitle(LoadResStr("IDS_MODS_INSTALLANDDOWNLOAD"));
 	GetProgressDialog()->SetMessage("");
 	GetProgressDialog()->SetProgress(0);
+	GetProgressDialog()->SetVisibility(true);
 
 	progressCallback = std::bind(&C4StartupModsDownloader::ExecuteCheckDownloadProgress, this);
 }
@@ -856,6 +857,10 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 			}
 		}
 	}
+
+	// Hide progress bar, so it's not behind the modal dialogs.
+	if (progressDialog)
+		progressDialog->SetVisibility(false);
 
 	if (totalSize == 0)
 	{
