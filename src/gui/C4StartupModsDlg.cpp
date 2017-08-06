@@ -523,6 +523,7 @@ void C4StartupModsDownloader::ModInfo::FromXMLData(const ModXMLData &xmlData)
 	for (const auto & fileInfo : xmlData.files)
 	{
 		files.emplace_back(ModInfo::FileInfo{ fileInfo.handle, fileInfo.name, fileInfo.size, fileInfo.sha1 });
+		requiredFilenames.insert(fileInfo.name);
 	}
 }
 
@@ -530,6 +531,7 @@ void C4StartupModsDownloader::ModInfo::Clear()
 {
 	CancelRequest();
 	files.resize(0);
+	requiredFilenames.clear();
 	downloadedBytes = totalBytes = 0;
 	delete originalXMLNode;
 	originalXMLNode = nullptr;
@@ -615,6 +617,27 @@ void C4StartupModsDownloader::ModInfo::CheckProgress()
 					originalXMLNode->Print(metadata, 0);
 					std::fclose(metadata);
 					successful = true;
+
+					// Now clean up all files that don't belong to this mod.
+					// This can be necessary if e.g. filenames change over updates.
+					for (DirectoryIterator iter(path.c_str()); *iter; ++iter)
+					{
+						const std::string filename(*iter);
+						// No folders.
+						if (DirectoryExists(filename.c_str())) continue;
+						// Safety: touch only a special set of file endings.
+						const std::string::size_type typeIndex = filename.rfind(".");
+						if (typeIndex == std::string::npos) continue;
+						const std::string ending(filename.substr(typeIndex + 1));
+						if (ending != "ocd" && ending != "ocf" && ending != "ocs") continue;
+						// In the required files anyway?
+						const std::string::size_type leafIndex = filename.rfind(DirectorySeparator);
+						std::string leaf(filename);
+						if (leafIndex != std::string::npos)
+							leaf = filename.substr(leafIndex + 1);
+						if (requiredFilenames.count(leaf) > 0) continue;
+						EraseFile(filename.c_str());
+					}
 				}
 			}
 			return;

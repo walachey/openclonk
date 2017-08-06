@@ -145,6 +145,8 @@ private:
 		~ModInfo() { Clear(); }
 
 		std::vector<FileInfo> files;
+		// All filenames are held separately, too, because the 'files' list will be manipulated.
+		std::set<std::string> requiredFilenames;
 
 		void Clear();
 		void FromXMLData(const ModXMLData &entry);
