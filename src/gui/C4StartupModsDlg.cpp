@@ -1040,12 +1040,13 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	AddElement(btn = new C4GUI::CallbackButton<C4StartupModsDlg>(LoadResStr("IDS_MODS_UPDATEALL"), caButtons.GetFromLeft(iButtonWidth), &C4StartupModsDlg::OnUpdateAllBtn));
 	btn->SetToolTip(LoadResStr("IDS_MODS_UPDATEALL_DESC"));
 
-	// right button area
-	auto buttonShowInstalled = new C4GUI::CallbackButton<C4StartupModsDlg, C4GUI::IconButton>(C4GUI::Ico_Save, caConfigArea.GetFromTop(iIconSize, iIconSize), '\0', &C4StartupModsDlg::OnShowInstalledBtn);
+	// Left button area.
+	auto buttonShowInstalled = new C4GUI::CallbackButton<C4StartupModsDlg, C4GUI::IconButton>(C4GUI::Ico_Save, caLeftBtnArea.GetFromTop(iIconSize, iIconSize), '\0', &C4StartupModsDlg::OnShowInstalledBtn);
 	buttonShowInstalled->SetToolTip(LoadResStr("IDS_MODS_SHOWINSTALLED_DESC"));
 	buttonShowInstalled->SetText(LoadResStr("IDS_MODS_SHOWINSTALLED"));
 	AddElement(buttonShowInstalled);
 
+	// Right button area.
 	{
 		auto filterLabel = new C4GUI::Label(LoadResStr("IDS_MODS_FILTER"), caConfigArea.GetFromTop(iSearchHgt), ALeft, C4GUI_Caption2FontClr, &::GraphicsResource.CaptionFont);
 		AddElement(filterLabel);
@@ -1056,6 +1057,7 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 		int iWdt = 100, iHgt = 12;
 		C4GUI::CheckBox::GetStandardCheckBoxSize(&iWdt, &iHgt, szText, pUseFont);
 		filters.showCompatible = new C4GUI::CheckBox(caConfigArea.GetFromTop(iHgt, iWdt), szText, true);
+		filters.showCompatible->SetToolTip(LoadResStr("IDS_MODS_FILTER_COMPATIBLE_DESC"));
 		AddElement(filters.showCompatible);
 	}
 	// initial focus

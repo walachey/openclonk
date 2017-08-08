@@ -583,6 +583,7 @@ IDS_MNU_VIEWPORT=Viewport
 IDS_MNU_WINDOWS=Windows
 IDS_MODS_FILTER=Search filters:
 IDS_MODS_FILTER_COMPATIBLE=Only compatible
+IDS_MODS_FILTER_COMPATIBLE_DESC=Only searches for mods that are known to work with this version of OpenClonk. Others might or might not work.
 IDS_MODS_INSTALL=Install
 IDS_MODS_INSTALL_CONFIRM=Install %s?||Total size: %s
 IDS_MODS_INSTALL_UPDATEMETADATA=Updating metadata...
