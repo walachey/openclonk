@@ -435,8 +435,8 @@ void C4StartupModsLocalModDiscovery::ExecuteDiscovery()
 		if (idSeparatorPosition == std::string::npos) continue;
 		const std::string id = leaf.substr(0, idSeparatorPosition);
 		if (id.empty()) continue;
-
-		AddMod(id, filename);
+		const std::string name = leaf.substr(idSeparatorPosition + 1);
+		AddMod(id, filename, name);
 	}
 }
 
@@ -449,14 +449,21 @@ C4StartupModsDownloader::C4StartupModsDownloader(C4StartupModsDlg *parent, const
 {
 	this->parent = parent;
 
-	items.emplace_back(std::move(std::make_unique<ModInfo>(entry)));
+	if (entry != nullptr)
+		items.emplace_back(std::move(std::make_unique<ModInfo>(entry)));
 
 	// Register timer.
 	Application.Add(this);
 }
 
+void C4StartupModsDownloader::AddModToQueue(std::string modID, std::string name)
+{
+	items.emplace_back(std::move(std::make_unique<ModInfo>(modID, name)));
+}
+
 C4StartupModsDownloader::~C4StartupModsDownloader()
 {
+	CStdLock lock(&guiThreadResponse);
 	Application.Remove(this);
 	CancelRequest();
 }
@@ -510,6 +517,14 @@ void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 C4StartupModsDownloader::ModInfo::ModInfo(const C4StartupModsListEntry *entry)
 {
 	FromXMLData(entry->GetModXMLData());
+}
+
+C4StartupModsDownloader::ModInfo::ModInfo(std::string modID, std::string name)
+{
+	Clear();
+	this->modID = modID;
+	this->name = name;
+	this->hasOnlyCachedInformation = true;
 }
 
 void C4StartupModsDownloader::ModInfo::FromXMLData(const ModXMLData &xmlData)
@@ -650,7 +665,7 @@ void C4StartupModsDownloader::ExecuteCheckDownloadProgress()
 	// Not even progressing yet?
 	if (progressDialog == nullptr) return;
 
-	if (!progressDialog->Execute() || progressDialog->IsAborted())
+	if (progressDialog->IsAborted())
 	{
 		CancelRequest();
 		return;
@@ -667,10 +682,11 @@ void C4StartupModsDownloader::ExecuteCheckDownloadProgress()
 		size_t downloaded, total;
 		std::tie(downloaded, total) = mod->GetProgress();
 		
+		downloadedBytes += downloaded;
+		totalBytes += total;
+
 		if (mod->IsBusy())
 		{
-			downloadedBytes += downloaded;
-			totalBytes += total;
 			anyNotFinished = true;
 		}
 	}
@@ -687,7 +703,7 @@ void C4StartupModsDownloader::ExecuteCheckDownloadProgress()
 		{
 			if (mod->WasSuccessful())
 			{
-				parent->modsDiscovery.AddMod(mod->modID, mod->GetPath());
+				parent->modsDiscovery.AddMod(mod->modID, mod->GetPath(), mod->name);
 				parent->QueueSyncWithDiscovery();
 			}
 			const std::string modError = mod->GetErrorMessage();
@@ -709,7 +725,7 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 {
 	if (!progressDialog) return;
 
-	if (!progressDialog->Execute() || progressDialog->IsAborted())
+	if (progressDialog->IsAborted())
 	{
 		CancelRequest();
 		return;
@@ -826,11 +842,13 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 	// Calculate total filesize to be downloaded.
 	size_t totalSize{ 0 };
 	bool atLeastOneFileExisted = false;
+	std::string allMissingModNames;
 
 	for (auto &mod : items)
 	{
 		const bool modInstalled = parent->modsDiscovery.IsModInstalled(mod->modID);
 		const std::string modBasePath = modInstalled ? parent->modsDiscovery.GetModInformation(mod->modID).path : "";
+		bool modRequiresFileDownload = false;
 
 		for (auto fileIterator = mod->files.begin(); fileIterator != mod->files.end();)
 		{
@@ -877,7 +895,12 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 			{
 				totalSize += file.size;
 				++fileIterator;
+				modRequiresFileDownload = true;
 			}
+		}
+		if (modRequiresFileDownload)
+		{
+			allMissingModNames += (allMissingModNames.empty() ? "\"" : ", \"") + mod->name + "\"";
 		}
 	}
 
@@ -907,7 +930,7 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 	}
 
 	StdStrBuf confirmationMessage;
-	confirmationMessage.Format(LoadResStr("IDS_MODS_INSTALL_CONFIRM"), items[0]->name.c_str(), filesizeString.c_str());
+	confirmationMessage.Format(LoadResStr("IDS_MODS_INSTALL_CONFIRM"), allMissingModNames.c_str(), filesizeString.c_str());
 	auto *callbackHandler = new C4GUI::CallbackHandler<C4StartupModsDownloader>(this, &C4StartupModsDownloader::OnConfirmInstallation);
 	auto *dialog = new C4GUI::ConfirmationDialog(confirmationMessage.getData(), "Confirm installation", callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
 	parent->GetScreen()->ShowRemoveDlg(dialog);
@@ -1014,6 +1037,8 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	btnInstall->SetToolTip(LoadResStr("IDS_MODS_INSTALL_DESC"));
 	AddElement(btnRemove = new C4GUI::CallbackButton<C4StartupModsDlg>(LoadResStr("IDS_MODS_UNINSTALL"), caButtons.GetFromLeft(iButtonWidth), &C4StartupModsDlg::OnUninstallModBtn));
 	btnRemove->SetToolTip(LoadResStr("IDS_MODS_UNINSTALL_DESC"));
+	AddElement(btn = new C4GUI::CallbackButton<C4StartupModsDlg>(LoadResStr("IDS_MODS_UPDATEALL"), caButtons.GetFromLeft(iButtonWidth), &C4StartupModsDlg::OnUpdateAllBtn));
+	btn->SetToolTip(LoadResStr("IDS_MODS_UPDATEALL_DESC"));
 
 	// right button area
 	auto buttonShowInstalled = new C4GUI::CallbackButton<C4StartupModsDlg, C4GUI::IconButton>(C4GUI::Ico_Save, caConfigArea.GetFromTop(iIconSize, iIconSize), '\0', &C4StartupModsDlg::OnShowInstalledBtn);
@@ -1374,6 +1399,35 @@ void C4StartupModsDlg::UpdateSelection(bool fUpdateCollapsed)
 void C4StartupModsDlg::OnThreadEvent(C4InteractiveEventType eEvent, void *pEventData)
 {
 	UpdateList(true);
+}
+
+void C4StartupModsDlg::CheckUpdateAll()
+{
+	// Wait for the discovery (in the same thread here).
+	modsDiscovery.WaitForDiscoveryFinished();
+	auto lock = std::move(modsDiscovery.Lock());
+
+	const auto & allInstalledMods = modsDiscovery.GetAllModInformation();
+
+	if (allInstalledMods.empty())
+	{
+		::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOUPDATEALL_NOMODS"), LoadResStr("IDS_MODS_NOUPDATEALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Error);
+		return;
+	}
+
+	if (downloader.get() != nullptr)
+		downloader.reset();
+	downloader = std::make_unique<C4StartupModsDownloader>(this, nullptr);
+
+	for (const auto & pair : allInstalledMods)
+	{
+		const std::string &modID = pair.first;
+		const std::string &name = pair.second.name;
+
+		downloader->AddModToQueue(modID, name);
+	}
+
+	downloader->RequestConfirmation();
 }
 
 void C4StartupModsDlg::CheckRemoveMod()

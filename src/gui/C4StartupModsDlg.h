@@ -70,6 +70,8 @@ public:
 	{
 		std::string id;
 		std::string path;
+		// Name parsed from the directory name.
+		std::string name;
 	};
 
 	bool IsDiscoveryFinished() const { return discoveryFinished; }
@@ -92,10 +94,10 @@ public:
 		CStdLock lock(&modInformationModification);
 		modsInformation.erase(id);
 	}
-	ModsInfo & AddMod(const std::string &id, const std::string &path)
+	ModsInfo & AddMod(const std::string &id, const std::string &path, const std::string &name)
 	{
 		CStdLock lock(&modInformationModification);
-		modsInformation[id] = ModsInfo{ id, path };
+		modsInformation[id] = ModsInfo{ id, path, name };
 		return modsInformation[id];
 	}
 
@@ -142,6 +144,8 @@ private:
 
 		ModInfo() = default;
 		ModInfo(const C4StartupModsListEntry *entry);
+		// From minimal information, will require an update.
+		ModInfo(std::string modID, std::string name);
 		~ModInfo() { Clear(); }
 
 		std::vector<FileInfo> files;
@@ -197,6 +201,7 @@ private:
 	}
 
 public:
+	void AddModToQueue(std::string modID, std::string name);
 	void RequestConfirmation();
 	void OnConfirmInstallation(C4GUI::Element *element);
 	// callback from C4Network2ReferenceClient
@@ -334,6 +339,7 @@ protected:
 	void OnInstallModBtn(C4GUI::Control *btn) { DoOK(); }
 	void OnShowInstalledBtn(C4GUI::Control *btn) { UpdateList(false, true); }
 	void OnUninstallModBtn(C4GUI::Control *btn) { CheckRemoveMod(); }
+	void OnUpdateAllBtn(C4GUI::Control *btn) { CheckUpdateAll(); }
 	void OnSelChange(class C4GUI::Element *pEl) { UpdateSelection(true); }
 	void OnSelDblClick(class C4GUI::Element *pEl) { DoOK(); }
 	void OnSortComboFill(C4GUI::ComboBox_FillCB *pFiller);
@@ -354,6 +360,7 @@ private:
 	void UpdateSelection(bool fUpdateCollapsed);
 	void CheckRemoveMod();
 	void OnConfirmRemoveMod(C4GUI::Element *element);
+	void CheckUpdateAll();
 	//void AddReferenceQuery(const char *szAddress, C4StartupNetListEntry::QueryType eQueryType); // add a ref searcher entry and start searching
 
 	// Set during update information retrieval.
