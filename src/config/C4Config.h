@@ -42,6 +42,7 @@ public:
 	int32_t  RXFontSize;
 	char ConfigUserPath[CFG_MaxString + 1];
 	StdStrBuf ScreenshotFolder;
+	StdStrBuf ModsFolder;
 	char MissionAccess[CFG_MaxString+1];
 	int32_t FPS;
 	int32_t DefRec;
@@ -52,6 +53,7 @@ public:
 	StdCopyStrBuf ExePath;
 	StdCopyStrBuf TempPath;
 	char UserDataPath[CFG_MaxString+1];
+	char ModsDataPath[CFG_MaxString+1];
 	char SystemDataPath[CFG_MaxString+1];
 	char ScreenshotPath[CFG_MaxString+1];
 	char TempUpdatePath[CFG_MaxString+1];

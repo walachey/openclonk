@@ -58,6 +58,7 @@ void C4ConfigGeneral::CompileFunc(StdCompiler *pComp)
 
 	// deliberately not grandfathering UserPath setting, since it was written to config by default
 	pComp->Value(mkNamingAdapt(s(ConfigUserPath),   "UserDataPath",       "", false, true));
+	pComp->Value(mkNamingAdapt(s(ModsDataPath),     "ModsDataPath",       "", false, true));
 	// assimilate old data
 	pComp->Value(mkNamingAdapt(s(Adopt.PlayerPath), "PlayerPath",       ""));
 
@@ -68,6 +69,7 @@ void C4ConfigGeneral::CompileFunc(StdCompiler *pComp)
 	pComp->Value(mkNamingAdapt(FPS,                 "FPS",                0              ));
 	pComp->Value(mkNamingAdapt(DefRec,              "DefRec",             0              ));
 	pComp->Value(mkNamingAdapt(ScreenshotFolder,    "ScreenshotFolder",   "Screenshots",  false, true));
+	pComp->Value(mkNamingAdapt(ModsFolder,          "ModsFolder",         "mods",  false, true));
 	pComp->Value(mkNamingAdapt(ScrollSmooth,        "ScrollSmooth",       4              ));
 	pComp->Value(mkNamingAdapt(AlwaysDebug,         "DebugMode",          0              ));
 	pComp->Value(mkNamingAdapt(OpenScenarioInGameMode, "OpenScenarioInGameMode", 0   )); 
@@ -509,6 +511,13 @@ void C4ConfigGeneral::DeterminePaths()
 	{
 		SAppend(ScreenshotFolder.getData(), ScreenshotPath);
 		AppendBackslash(ScreenshotPath);
+	}
+	// Mods path
+	SCopy(UserDataPath, ModsDataPath, CFG_MaxString - 1);
+	if (ModsFolder.getLength() + std::strlen(ModsDataPath) + 1 <= CFG_MaxString)
+	{
+		SAppend(ModsFolder.getData(), ModsDataPath);
+		AppendBackslash(ModsDataPath);
 	}
 	// Create user path if it doesn't already exist
 	CreatePath(UserDataPath);
