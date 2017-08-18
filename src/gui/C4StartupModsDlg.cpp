@@ -205,6 +205,14 @@ void C4StartupModsListEntry::OnNoResultsFound()
 	UpdateText();
 }
 
+void C4StartupModsListEntry::ShowPageInfo(int page, int totalPages, int totalResults)
+{
+	pIcon->SetAnimated(false, 1);
+	sInfoText[0].Copy(LoadResStr("IDS_MODS_SEARCH_NEXTPAGE"));
+	sInfoText[1].Format(LoadResStr("IDS_MODS_SEARCH_NEXTPAGE_DESC"), page, totalPages, totalResults);
+	UpdateText();
+}
+
 void C4StartupModsListEntry::OnError(std::string message)
 {
 	pIcon->SetAnimated(false, 1);
@@ -413,7 +421,7 @@ void C4StartupModsLocalModDiscovery::Execute()
 
 	parent->QueueSyncWithDiscovery();
 
-	StdThread::Stop();
+	StdThread::SignalStop();
 }
 
 void C4StartupModsLocalModDiscovery::ExecuteDiscovery()
@@ -1117,11 +1125,20 @@ C4GUI::Control *C4StartupModsDlg::GetDlgModeFocusControl()
 	return pGameSelList;
 }
 
-void C4StartupModsDlg::QueryModList()
+void C4StartupModsDlg::QueryModList(bool loadNextPage)
 {
-	// Clear the list and add an info entry.
-	ClearList();
-	C4StartupModsListEntry *infoEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
+	C4StartupModsListEntry *infoEntry{ nullptr };
+	// New page requested? Leave the list as-is.
+	if (loadNextPage && pGameSelList->GetLast() != nullptr)
+	{
+		infoEntry = static_cast<C4StartupModsListEntry*> (pGameSelList->GetLast());
+	}
+	else
+	{
+		// Clear the list and add an info entry.
+		ClearList();
+		infoEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
+	}
 	infoEntry->MakeInfoEntry();
 
 	// First, construct the 'where' part of the query.
@@ -1155,6 +1172,9 @@ void C4StartupModsDlg::QueryModList()
 		searchQueryPostfix += "sort=" + sortKeySuffix + "&";
 	}
 
+	// Request the correct page.
+	const int requestedPage = loadNextPage ? pageInfo.currentPage + 1 : 1;
+	searchQueryPostfix += "page=" + std::to_string(requestedPage) + "&";
 
 	Log(searchQueryPostfix.c_str());
 	// Initialize connection.
@@ -1267,8 +1287,8 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 		// Check whether the data has arrived yet.
 		if (!postClient->isBusy())
 		{
-			// At this point we can assert that the list contains only one child - the info field.
-			C4StartupModsListEntry *infoEntry = static_cast<C4StartupModsListEntry*> (pGameSelList->GetFirst());
+			// At this point we can assert that the info field is the last entry in the list.
+			C4StartupModsListEntry *infoEntry = static_cast<C4StartupModsListEntry*> (pGameSelList->GetLast());
 			assert(infoEntry != nullptr);
 
 			if (!postClient->isSuccess())
@@ -1295,6 +1315,22 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 			const TiXmlElement *root = xmlDocument.RootElement();
 			assert(strcmp(root->Value(), resourceElementName) == 0);
 
+			// Parse pagination data.
+			pageInfo.currentPage = pageInfo.totalPages = pageInfo.totalResults = 0;
+			const TiXmlElement *meta = root->FirstChildElement("_meta");
+			if (meta != nullptr)
+			{
+				try
+				{
+					const int currentPage = std::stoi(getSafeStringValue(meta, "page", "0"));
+					const int totalResults = std::stoi(getSafeStringValue(meta, "total", "0"));
+					const int resultsPerPage = std::stoi(getSafeStringValue(meta, "max_results", "0"));
+					pageInfo.currentPage = currentPage;
+					pageInfo.totalPages = (totalResults / resultsPerPage) + std::min(1, totalResults % resultsPerPage);
+					pageInfo.totalResults = totalResults;
+				}
+				catch (...) {}
+			}
 			std::vector<const TiXmlElement*> elements;
 			for (const TiXmlElement* e = root->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
 				elements.push_back(e);
@@ -1303,6 +1339,12 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 			// Nothing found? Notify!
 			if (elements.empty())
 				infoEntry->OnNoResultsFound();
+			else if (pageInfo.currentPage < pageInfo.totalPages)
+			{
+				infoEntry->ShowPageInfo(pageInfo.currentPage, pageInfo.totalPages, pageInfo.totalResults);
+				pGameSelList->RemoveElement(infoEntry);
+				pGameSelList->AddElement(infoEntry);
+			}
 			else
 				delete infoEntry;
 
@@ -1332,6 +1374,8 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 		{
 			pNextElem = pElem->GetNext(); // determine next exec element now - execution
 			C4StartupModsListEntry *pEntry = static_cast<C4StartupModsListEntry *>(pElem);
+			if (pEntry->IsInfoEntry()) continue;
+
 			if (!modsDiscovery.IsModInstalled(pEntry->GetID()))
 				pEntry->UpdateInstalledState(nullptr);
 			else
@@ -1436,6 +1480,7 @@ void C4StartupModsDlg::CheckRemoveMod()
 {
 	C4StartupModsListEntry *selected = static_cast<C4StartupModsListEntry*>(pGameSelList->GetSelectedItem());
 	if (selected == nullptr) return;
+	if (selected->IsInfoEntry()) return;
 
 	StdStrBuf confirmationMessage;
 	confirmationMessage.Format(LoadResStr("IDS_MODS_UNINSTALL_CONFIRM"), selected->GetTitle().c_str());
@@ -1505,6 +1550,14 @@ bool C4StartupModsDlg::DoOK()
 	else // Show confirmation dialogue.
 	{
 		auto *elem = static_cast<C4StartupModsListEntry*> (pSelection);
+		if (elem->IsInfoEntry())
+		{
+			if (postClient.get() != nullptr) return false;
+			// Next page?
+			if (pageInfo.currentPage >= pageInfo.totalPages) return false;
+			QueryModList(true);
+			return true;
+		}
 		if (elem->GetID().empty()) return false;
 
 		if (downloader.get() != nullptr)

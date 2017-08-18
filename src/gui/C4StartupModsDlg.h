@@ -274,9 +274,10 @@ public:
 
 	// There is a special entry that conveys status information.
 	void MakeInfoEntry();
+	bool IsInfoEntry() const { return isInfoEntry; }
 	void OnNoResultsFound();
 	void OnError(std::string message);
-
+	void ShowPageInfo(int page, int totalPages, int totalResults);
 	const char *GetError() { return fError ? sError.getData() : nullptr; } // return error message, if any is set
 																		   //C4Network2Reference *GrabReference(); // grab the reference so it won't be deleted when this item is removed
 																		   //C4Network2Reference *GetReference() const { return pRef; } // have a look at the reference
@@ -352,7 +353,7 @@ private:
 	// Deletes lingering updates etc.
 	void CancelRequest();
 
-	void QueryModList();
+	void QueryModList(bool loadNextPage=false);
 	void ClearList();
 	void UpdateList(bool fGotReference = false, bool onlyWithLocalFiles = false);
 	void AddToList(std::vector<const TiXmlElement*> elements, bool isLocalData);
@@ -380,6 +381,13 @@ private:
 	};
 	std::vector<SortingOption> sortingOptions;
 	std::string sortKeySuffix = "";
+
+	struct _PageInfo
+	{
+		int totalResults{ 0 };
+		int currentPage{ 0 };
+		int totalPages{ 0 };
+	} pageInfo;
 public:
 	bool DoOK(); // join currently selected item
 	bool DoBack(); // abort dialog
