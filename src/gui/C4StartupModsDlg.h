@@ -330,7 +330,7 @@ protected:
 	virtual bool OnEnter() { DoOK(); return true; }
 	virtual bool OnEscape() { DoBack(); return true; }
 	bool KeyBack() { return DoBack(); }
-	bool KeyRefresh() { DoRefresh(); return true; }
+	bool KeyRefresh();
 	bool KeyForward() { DoOK(); return true; }
 
 	virtual void OnShown();             // callback when shown: Start searching for games

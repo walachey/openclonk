@@ -1178,6 +1178,8 @@ void C4StartupModsDlg::QueryModList(bool loadNextPage)
 
 	Log(searchQueryPostfix.c_str());
 	// Initialize connection.
+	// Abort possible running request.
+	CancelRequest();
 	queryWasSuccessful = false;
 	postClient = std::make_unique<C4Network2HTTPClient>();
 	
@@ -1572,6 +1574,13 @@ bool C4StartupModsDlg::DoBack()
 {
 	// abort dialog: Back to main
 	C4Startup::Get()->SwitchDialog(C4Startup::SDID_Back);
+	return true;
+}
+
+bool C4StartupModsDlg::KeyRefresh()
+{
+	if (!postClient.get())
+		DoRefresh();
 	return true;
 }
 
