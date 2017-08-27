@@ -940,7 +940,7 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 	StdStrBuf confirmationMessage;
 	confirmationMessage.Format(LoadResStr("IDS_MODS_INSTALL_CONFIRM"), allMissingModNames.c_str(), filesizeString.c_str());
 	auto *callbackHandler = new C4GUI::CallbackHandler<C4StartupModsDownloader>(this, &C4StartupModsDownloader::OnConfirmInstallation);
-	auto *dialog = new C4GUI::ConfirmationDialog(confirmationMessage.getData(), "Confirm installation", callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
+	auto *dialog = new C4GUI::ConfirmationDialog(confirmationMessage.getData(), LoadResStr("IDS_MODS_INSTALL_CONFIRM_TITLE"), callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
 	parent->GetScreen()->ShowRemoveDlg(dialog);
 }
 
