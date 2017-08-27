@@ -585,6 +585,7 @@ IDS_MODS_FILTER=Suchfilter:
 IDS_MODS_FILTER_COMPATIBLE=Nur kompatible
 IDS_MODS_FILTER_COMPATIBLE_DESC=Sucht nur nach kompatiblen Mods. Andere Mods funktionieren eventuell nicht korrekt.
 IDS_MODS_INSTALL=Installieren
+IDS_MODS_INSTALL_CHECKFILES=Prüfe lokale Dateien...
 IDS_MODS_INSTALL_CONFIRM=%s installieren?||Gesamtgröße: %s
 IDS_MODS_INSTALL_CONFIRM_TITLE=Installation bestätigen
 IDS_MODS_INSTALL_UPDATEMETADATA=Update Metadaten...

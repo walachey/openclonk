@@ -142,7 +142,7 @@ private:
 		std::string modID;
 		std::string name;
 
-		ModInfo() = default;
+		ModInfo() : localDiscoveryCheck(*this) {}
 		ModInfo(const C4StartupModsListEntry *entry);
 		// From minimal information, will require an update.
 		ModInfo(std::string modID, std::string name);
@@ -163,6 +163,20 @@ private:
 		bool RequiresMetadataUpdate() const { return hasOnlyCachedInformation; }
 		std::string GetErrorMessage() const { if (errorMessage.empty()) return ""; return name + ": " + errorMessage; }
 		std::string GetPath();
+
+		struct LocalDiscoveryCheck : protected StdThread
+		{
+			std::string basePath;
+			bool needsCheck{ true };
+			bool installed{ false };
+			bool atLeastOneFileExisted{ false };
+
+			LocalDiscoveryCheck(ModInfo &mod) : mod(mod) { };
+			void Start() { StdThread::Start(); }
+		protected:
+			ModInfo &mod;
+			void Execute() override;
+		} localDiscoveryCheck;
 	private:
 		bool successful{ false };
 		// Whether the information might be outdated and needs an update prior to hash-checking.
@@ -184,6 +198,8 @@ private:
 	CStdCSec guiThreadResponse;
 	void CancelRequest();
 	void ExecuteCheckDownloadProgress();
+	void ExecutePreRequestChecks();
+	void ExecuteWaitForChecksums();
 	void ExecuteRequestConfirmation();
 
 	void ExecuteMetadataUpdate();

@@ -522,12 +522,12 @@ void C4StartupModsDownloader::OnConfirmInstallation(C4GUI::Element *element)
 	progressCallback = std::bind(&C4StartupModsDownloader::ExecuteCheckDownloadProgress, this);
 }
 
-C4StartupModsDownloader::ModInfo::ModInfo(const C4StartupModsListEntry *entry)
+C4StartupModsDownloader::ModInfo::ModInfo(const C4StartupModsListEntry *entry) : ModInfo()
 {
 	FromXMLData(entry->GetModXMLData());
 }
 
-C4StartupModsDownloader::ModInfo::ModInfo(std::string modID, std::string name)
+C4StartupModsDownloader::ModInfo::ModInfo(std::string modID, std::string name) : ModInfo()
 {
 	Clear();
 	this->modID = modID;
@@ -766,7 +766,7 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 			return;
 		}
 		// Nothing to be updated found? Great, give execution back.
-		progressCallback = std::bind(&C4StartupModsDownloader::ExecuteRequestConfirmation, this);
+		progressCallback = std::bind(&C4StartupModsDownloader::ExecutePreRequestChecks, this);
 		return;
 	}
 
@@ -828,10 +828,10 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 
 void C4StartupModsDownloader::RequestConfirmation()
 {
-	progressCallback = std::bind(&C4StartupModsDownloader::ExecuteRequestConfirmation, this);
+	progressCallback = std::bind(&C4StartupModsDownloader::ExecutePreRequestChecks, this);
 }
 
-void C4StartupModsDownloader::ExecuteRequestConfirmation()
+void C4StartupModsDownloader::ExecutePreRequestChecks()
 {
 	// Disable callback during execution.
 	progressCallback = nullptr;
@@ -847,6 +847,61 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 	// To be able to check against the installed mods, the discovery needs to be finished.
 	parent->modsDiscovery.WaitForDiscoveryFinished();
 
+	// Check all local files for compatibility.
+	bool anyModNeedsCheck = false;
+	for (auto &mod : items)
+	{
+		if (!mod->localDiscoveryCheck.needsCheck) continue;
+
+		const bool modInstalled = mod->localDiscoveryCheck.installed = parent->modsDiscovery.IsModInstalled(mod->modID);
+		mod->localDiscoveryCheck.basePath = modInstalled ? parent->modsDiscovery.GetModInformation(mod->modID).path : "";
+		mod->localDiscoveryCheck.needsCheck = false;
+
+		if (modInstalled)
+		{
+
+			for (auto file : mod->files)
+			{
+				if (file.sha1.empty()) continue;
+				mod->localDiscoveryCheck.needsCheck = anyModNeedsCheck = true;
+				break;
+			}
+
+			if (mod->localDiscoveryCheck.needsCheck)
+			{
+				mod->localDiscoveryCheck.Start();
+			}
+		}
+	}
+
+	if (anyModNeedsCheck)
+	{
+		progressCallback = std::bind(&C4StartupModsDownloader::ExecuteWaitForChecksums, this);
+		GetProgressDialog()->SetTitle(LoadResStr("IDS_MODS_INSTALL_CHECKFILES"));
+		GetProgressDialog()->SetMessage("");
+		GetProgressDialog()->SetProgress(0);
+	}
+	else
+	{
+		// Just enter it directly.
+		ExecuteRequestConfirmation();
+	}
+}
+
+void C4StartupModsDownloader::ExecuteWaitForChecksums()
+{
+	for (auto &mod : items)
+	{
+		if (mod->localDiscoveryCheck.needsCheck)
+			return;
+	}
+	progressCallback = std::bind(&C4StartupModsDownloader::ExecuteRequestConfirmation, this);
+}
+
+void C4StartupModsDownloader::ExecuteRequestConfirmation()
+{
+	progressCallback = nullptr;
+
 	// Calculate total filesize to be downloaded.
 	size_t totalSize{ 0 };
 	bool atLeastOneFileExisted = false;
@@ -854,62 +909,17 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 
 	for (auto &mod : items)
 	{
-		const bool modInstalled = parent->modsDiscovery.IsModInstalled(mod->modID);
-		const std::string modBasePath = modInstalled ? parent->modsDiscovery.GetModInformation(mod->modID).path : "";
-		bool modRequiresFileDownload = false;
-
-		for (auto fileIterator = mod->files.begin(); fileIterator != mod->files.end();)
-		{
-			auto &file = *fileIterator;
-			bool fileExists = false;
-
-			// Check if the file already exists.
-			if (modInstalled && !file.sha1.empty())
-			{
-				const std::string &hashString = file.sha1;
-				BYTE hash[SHA_DIGEST_LENGTH];
-				const std::string filePath = modBasePath + DirectorySeparator + file.name;
-				if (GetFileSHA1(filePath.c_str(), hash))
-				{
-					fileExists = true;
-
-					// Match hashes (string against byte array).
-					const size_t byteLen = 2;
-					size_t index = 0;
-					for (size_t offset = 0; offset < hashString.size(); offset += byteLen, index += 1)
-					{
-						// Oddly, the indices of the byte array to not correspond 1-to-1 to a standard sha1 string.
-						const size_t hashIndex = (index / 4 * 4) + (3 - (index % 4));
-						const BYTE &byte = hash[hashIndex];
-
-						const std::string byteStr = hashString.substr(offset, byteLen);
-						unsigned char byteStrValue = static_cast<unsigned char> (std::stoi(byteStr, nullptr, 16));
-
-						if (byteStrValue != byte)
-						{
-							fileExists = false;
-							break;
-						}
-					}
-				}
-			}
-
-			if (fileExists)
-			{
-				fileIterator = mod->files.erase(fileIterator);
-				atLeastOneFileExisted = true;
-			}
-			else
-			{
-				totalSize += file.size;
-				++fileIterator;
-				modRequiresFileDownload = true;
-			}
-		}
-		if (modRequiresFileDownload)
+		if (mod->localDiscoveryCheck.atLeastOneFileExisted)
+			atLeastOneFileExisted = true;
+		if (!mod->files.empty())
 		{
 			allMissingModNames += (allMissingModNames.empty() ? "\"" : ", \"") + mod->name + "\"";
+			for (auto file : mod->files)
+			{
+				totalSize += file.size;
+			}
 		}
+
 	}
 
 	// Hide progress bar, so it's not behind the modal dialogs.
@@ -943,6 +953,63 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 	auto *dialog = new C4GUI::ConfirmationDialog(confirmationMessage.getData(), LoadResStr("IDS_MODS_INSTALL_CONFIRM_TITLE"), callbackHandler, C4GUI::MessageDialog::btnYesNo, false, C4GUI::Icons::Ico_Save);
 	parent->GetScreen()->ShowRemoveDlg(dialog);
 }
+
+void C4StartupModsDownloader::ModInfo::LocalDiscoveryCheck::Execute()
+{
+	assert(installed);
+
+	for (auto fileIterator = mod.files.begin(); fileIterator != mod.files.end();)
+	{
+		auto &file = *fileIterator;
+		bool fileExists = false;
+
+		// Check if the file already exists.
+		if (!file.sha1.empty())
+		{
+			const std::string &hashString = file.sha1;
+			BYTE hash[SHA_DIGEST_LENGTH];
+			const std::string filePath = basePath + DirectorySeparator + file.name;
+			if (GetFileSHA1(filePath.c_str(), hash))
+			{
+				fileExists = true;
+
+				// Match hashes (string against byte array).
+				const size_t byteLen = 2;
+				size_t index = 0;
+				for (size_t offset = 0; offset < hashString.size(); offset += byteLen, index += 1)
+				{
+					// Oddly, the indices of the byte array to not correspond 1-to-1 to a standard sha1 string.
+					const size_t hashIndex = (index / 4 * 4) + (3 - (index % 4));
+					const BYTE &byte = hash[hashIndex];
+
+					const std::string byteStr = hashString.substr(offset, byteLen);
+					unsigned char byteStrValue = static_cast<unsigned char> (std::stoi(byteStr, nullptr, 16));
+
+					if (byteStrValue != byte)
+					{
+						fileExists = false;
+						break;
+					}
+				}
+			}
+		}
+
+		if (fileExists)
+		{
+			fileIterator = mod.files.erase(fileIterator);
+			atLeastOneFileExisted = true;
+		}
+		else
+		{
+			++fileIterator;
+		}
+	}
+
+	// Fire-once check done.
+	needsCheck = false;
+	StdThread::SignalStop();
+}
+
 
 // ----------- C4StartupNetDlg ---------------------------------------------------------------------------------
 
