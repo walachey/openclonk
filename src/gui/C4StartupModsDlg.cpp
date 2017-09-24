@@ -32,8 +32,16 @@
 const std::string C4StartupModsDlg::baseServerURL = "frustrum.pictor.uberspace.de/larry/api/";
 
 // Used to parse values of subelements from an XML element.
-std::string getSafeStringValue(const TiXmlElement *xml, const char *childName, std::string fallback = "")
+std::string getSafeStringValue(const TiXmlElement *xml, const char *childName, std::string fallback = "", bool isAttribute = false)
 {
+	if (xml == nullptr) return fallback;
+	if (isAttribute)
+	{
+		const char * value = xml->Attribute(childName);
+		if (value == nullptr)
+			return fallback;
+		return{ value };
+	}
 	const TiXmlElement *child = xml->FirstChildElement(childName);
 	if (child == nullptr) return fallback;
 	const char *nodeText = child->GetText();
@@ -43,28 +51,51 @@ std::string getSafeStringValue(const TiXmlElement *xml, const char *childName, s
 	return fallback;
 };
 
-ModXMLData::ModXMLData(const TiXmlElement *xml, bool isLocalData)
+ModXMLData::ModXMLData(const TiXmlElement *xml, Source source)
 {
 
-	// Remember whether the loaded the element from a local file, because we
+	// Remember whether the loaded the element from a local file / overview, because we
 	// then still have to do a query if we want to update.
-	isLoadedFromLocal = isLocalData;
+	this->source = source;
 	// Remember the XML element in case we need to pretty-print it later.
 	originalXMLElement = xml->Clone();
-
-	id = getSafeStringValue(xml, "_id", "");
-
-	title = getSafeStringValue(xml, "title", "???");
+	id = getSafeStringValue(xml, "id", "", true);
+	title = getSafeStringValue(xml, "title", "");
+	assert(IsValidUtf8(title.c_str()));
+	slug = getSafeStringValue(xml, "slug", title);
+	assert(IsValidUtf8(slug.c_str()));
 	description = getSafeStringValue(xml, "description");
+	assert(IsValidUtf8(description.c_str()));
 	if (!description.empty())
 	{
-		if (description.size() > 200)
+		if (description.size() > 150)
 		{
-			description.resize(200);
-			description += "...";
+			// Find a cutoff that is not inside a UTF-8 character.
+			std::string::size_type characterCount{ 0 };
+			for (const char *c = description.data(); *c != '\0';)
+			{
+				const uint8_t val = *c;
+				if (val <= 127)
+				{
+					c += 1;
+				}
+				else
+				{
+					GetNextUTF8Character(&c);
+				}
+				characterCount += 1;
+
+				if ((characterCount > 140 && *c == ' ') || (characterCount > 150))
+				{
+					uint32_t byteDifference = c - description.data();
+					description.resize(byteDifference);
+					description += "...";
+					break;
+				}
+			}
 		}
 	}
-
+	assert(IsValidUtf8(description.c_str()));
 	// Additional meta-information.
 
 	for (const TiXmlElement *filenode = xml->FirstChildElement("file"); filenode != nullptr; filenode = filenode->NextSiblingElement("file"))
@@ -72,12 +103,12 @@ ModXMLData::ModXMLData(const TiXmlElement *xml, bool isLocalData)
 		// We guarantee that we do not modify the handle below, thus the const_cast is safe.
 		const TiXmlHandle nodeHandle(const_cast<TiXmlNode*> (static_cast<const TiXmlNode*> (filenode)));
 
-		const std::string handle = getSafeStringValue(filenode, "file", "");
-		const std::string name = getSafeStringValue(filenode, "name", "");
+		const std::string handle = getSafeStringValue(filenode, "_id", "");
+		const std::string name = getSafeStringValue(filenode, "filename", "");
 		const std::string lengthString = getSafeStringValue(filenode, "length", "");
 
 		std::string hashSHA1 = "";
-		const auto hashNode = nodeHandle.FirstChild("metadata").FirstChild("hash").Node();
+		const auto hashNode = nodeHandle.FirstChild("metadata").FirstChild("hashes").Node();
 		if (hashNode != nullptr)
 		{
 			hashSHA1 = getSafeStringValue(hashNode->ToElement(), "sha1", "");
@@ -163,12 +194,28 @@ C4StartupModsListEntry::~C4StartupModsListEntry()
 	ClearRef();
 }
 
-void C4StartupModsListEntry::FromXML(const TiXmlElement *xml, bool isLocalData)
+void C4StartupModsListEntry::FromXML(const TiXmlElement *xml, ModXMLData::Source source, std::string fallbackID, std::string fallbackName)
 {
-	modXMLData = std::make_unique<ModXMLData>(xml, isLocalData);
-
-	sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"), getSafeStringValue(xml, "downloads", "0").c_str());
-	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), modXMLData->title.c_str(), getSafeStringValue(xml, "author", "???").c_str());
+	modXMLData = std::make_unique<ModXMLData>(xml, source);
+	if (modXMLData->id.empty()) modXMLData->id = fallbackID;
+	if (modXMLData->title.empty()) modXMLData->title = fallbackName;
+	if (source != ModXMLData::Source::Local)
+	{
+		std::string updated = getSafeStringValue(xml, "updatedAt", "");
+		std::string::size_type dateEnd;
+		if (!updated.empty() && (dateEnd = updated.find('T')) != std::string::npos)
+		{
+			updated = updated.substr(0, dateEnd);
+		}
+		else
+			updated = "/";
+		sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"),
+			updated.c_str(),
+			getSafeStringValue(xml->FirstChildElement("voting"), "sum", "0").c_str());
+	}
+	const std::string author = getSafeStringValue(xml->FirstChildElement("author"), "username", "???");
+	const std::string title = modXMLData->title.empty() ? "???" : modXMLData->title;
+	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), title.c_str(), author.c_str());
 
 	for (auto &file : modXMLData->files)
 	{
@@ -532,7 +579,7 @@ C4StartupModsDownloader::ModInfo::ModInfo(std::string modID, std::string name) :
 	Clear();
 	this->modID = modID;
 	this->name = name;
-	this->hasOnlyCachedInformation = true;
+	this->hasOnlyIncompleteInformation = true;
 }
 
 void C4StartupModsDownloader::ModInfo::FromXMLData(const ModXMLData &xmlData)
@@ -540,8 +587,9 @@ void C4StartupModsDownloader::ModInfo::FromXMLData(const ModXMLData &xmlData)
 	Clear();
 	modID = xmlData.id;
 	name = xmlData.title;
+	slug = xmlData.slug;
 	originalXMLNode = xmlData.originalXMLElement->Clone();
-	hasOnlyCachedInformation = xmlData.isLoadedFromLocal;
+	hasOnlyIncompleteInformation = xmlData.requiresUpdate();
 
 	for (const auto & fileInfo : xmlData.files)
 	{
@@ -570,7 +618,7 @@ void C4StartupModsDownloader::ModInfo::CancelRequest()
 std::string C4StartupModsDownloader::ModInfo::GetPath()
 {
 	return std::string(Config.General.UserDataPath) + "mods" + DirectorySeparator + \
-		modID + "_" + name;
+		modID + "_" + slug;
 }
 
 void C4StartupModsDownloader::ModInfo::CheckProgress()
@@ -583,12 +631,12 @@ void C4StartupModsDownloader::ModInfo::CheckProgress()
 	{
 		postClient = std::make_unique<C4Network2HTTPClient>();
 
-		if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + files.back().handle).c_str()))
+		if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + "media/" + files.back().handle + "?download").c_str()))
 		{
 			assert(false);
 			return;
 		}
-		postClient->SetExpectedResponseType(C4Network2HTTPClient::ResponseType::XML);
+		postClient->SetExpectedResponseType(C4Network2HTTPClient::ResponseType::NoPreference);
 
 		// Do the actual request.
 		postClient->SetNotify(&Application.InteractiveThread);
@@ -604,6 +652,7 @@ void C4StartupModsDownloader::ModInfo::CheckProgress()
 	{
 		if (!postClient->isSuccess())
 		{
+			errorMessage = std::string(LoadResStr("IDS_MODS_NOINSTALL_CONNECTIONFAIL")) + postClient->GetError();
 			CancelRequest();
 			return;
 		}
@@ -719,12 +768,12 @@ void C4StartupModsDownloader::ExecuteCheckDownloadProgress()
 				errorMessage += "|" + modError;
 		}
 
+		CancelRequest();
+
 		if (!errorMessage.empty())
 		{
 			::pGUI->ShowMessageModal(errorMessage.c_str(), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Error);
 		}
-
-		CancelRequest();
 		return;
 	}
 }
@@ -753,7 +802,7 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 
 			postMetadataClient = std::make_unique<C4Network2HTTPClient>();
 
-			if (!postMetadataClient->Init() || !postMetadataClient->SetServer((C4StartupModsDlg::baseServerURL + "items/" + mod->modID).c_str()))
+			if (!postMetadataClient->Init() || !postMetadataClient->SetServer((C4StartupModsDlg::baseServerURL + "uploads/" + mod->modID).c_str()))
 			{
 				assert(false);
 				return;
@@ -778,8 +827,8 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 		{
 			Log(postMetadataClient->GetError());
 			// Destroy client and cancel.
-			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			CancelRequest();
+			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			return;
 		}
 
@@ -789,16 +838,16 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 		if (xmlDocument.Error())
 		{
 			Log(xmlDocument.ErrorDesc());
-			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			CancelRequest();
+			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			return;
 		}
-		const char * resourceElementName = "resource";
+		const char * resourceElementName = "upload";
 		const TiXmlElement *root = xmlDocument.RootElement();
 		assert(strcmp(root->Value(), resourceElementName) == 0);
 
 		// Re-use the parsing from the list entries.
-		ModXMLData modXMLData(root, false);
+		ModXMLData modXMLData(root, ModXMLData::Source::DetailView);
 
 		// Find the mod matching the id from the metadata.
 		size_t foundIdx = 0;
@@ -815,9 +864,9 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 		// Somehow, the matching mod could not be found. That should not happen.
 		if (foundIdx == items.size())
 		{
+			CancelRequest();
 			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			assert(false);
-			CancelRequest();
 			return;
 		}
 
@@ -928,11 +977,11 @@ void C4StartupModsDownloader::ExecuteRequestConfirmation()
 
 	if (totalSize == 0)
 	{
+		CancelRequest();
 		if (atLeastOneFileExisted)
 			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_ALREADYINSTALLED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 		else
 			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_NODATA"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Error);
-		CancelRequest();
 		return;
 	}
 
@@ -1058,9 +1107,9 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	
 	sortingOptions =
 	{
-		{ "version", "IDS_MODS_SORT_RATING_UP", "IDS_MODS_SORT_RATING_DOWN" },
+		{ "voting.sum", "IDS_MODS_SORT_RATING_DOWN", "IDS_MODS_SORT_RATING_UP" },
 		{ "title", "IDS_MODS_SORT_NAME_UP", "IDS_MODS_SORT_NAME_DOWN" },
-		{ "_created", "IDS_MODS_SORT_DATE_UP", "IDS_MODS_SORT_DATE_DOWN" },
+		{ "updatedAt", "IDS_MODS_SORT_DATE_DOWN", "IDS_MODS_SORT_DATE_UP" },
 	};
 	// Translate all labels.
 	for (auto &option : sortingOptions)
@@ -1250,7 +1299,7 @@ void C4StartupModsDlg::QueryModList(bool loadNextPage)
 	queryWasSuccessful = false;
 	postClient = std::make_unique<C4Network2HTTPClient>();
 	
-	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + "items" + searchQueryPostfix).c_str()))
+	if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::baseServerURL + "uploads" + searchQueryPostfix).c_str()))
 	{
 		assert(false);
 		return;
@@ -1286,13 +1335,13 @@ void C4StartupModsDlg::ClearList()
 	}
 }
 
-void C4StartupModsDlg::AddToList(std::vector<const TiXmlElement*> elements, bool isLocalData)
+void C4StartupModsDlg::AddToList(std::vector<TiXmlElementLoaderInfo> elements, ModXMLData::Source source)
 {
 	const bool modsDiscoveryFinished = modsDiscovery.IsDiscoveryFinished();
 	for (const auto e : elements)
 	{
 		C4StartupModsListEntry *pEntry = new C4StartupModsListEntry(pGameSelList, nullptr, this);
-		pEntry->FromXML(e, isLocalData);
+		pEntry->FromXML(e.element, source, e.id, e.name);
 
 		if (modsDiscoveryFinished && modsDiscovery.IsModInstalled(pEntry->GetID()))
 		{
@@ -1320,7 +1369,7 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 		auto lock = std::move(modsDiscovery.Lock());
 		auto installedMods = modsDiscovery.GetAllModInformation();
 
-		std::vector<const TiXmlElement*> elements;
+		std::vector<TiXmlElementLoaderInfo> elements;
 		for (const auto & modData: installedMods)
 		{
 			const auto &mod = modData.second;
@@ -1335,12 +1384,12 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 			if (xmlDocument.Error()) continue;
 
 			const TiXmlElement *root = xmlDocument.RootElement();
-			elements.emplace_back(static_cast<TiXmlElement*>(root->Clone()));
+			elements.emplace_back(static_cast<TiXmlElement*>(root->Clone()), mod.id, mod.name);
 		}
-		AddToList(elements, true);
+		AddToList(elements, ModXMLData::Source::Local);
 		// We took ownership, clear it.
 		for (auto & e : elements)
-			delete e;
+			delete e.element;
 		
 		if (elements.empty())
 		{
@@ -1380,30 +1429,29 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 				infoEntry->OnError(xmlDocument.ErrorDesc());
 				return;
 			}
-			const char * resourceElementName = "resource";
+			const char * rootElementName = "uploads";
+			const char * resourceElementName = "upload";
 			const TiXmlElement *root = xmlDocument.RootElement();
-			assert(strcmp(root->Value(), resourceElementName) == 0);
+			assert(strcmp(root->Value(), rootElementName) == 0);
 
 			// Parse pagination data.
 			pageInfo.currentPage = pageInfo.totalPages = pageInfo.totalResults = 0;
 			const TiXmlElement *meta = root->FirstChildElement("_meta");
-			if (meta != nullptr)
+			const TiXmlElement *pagination = meta ? meta->FirstChildElement("pagination") : nullptr;
+			if (pagination != nullptr)
 			{
 				try
 				{
-					const int currentPage = std::stoi(getSafeStringValue(meta, "page", "0"));
-					const int totalResults = std::stoi(getSafeStringValue(meta, "total", "0"));
-					const int resultsPerPage = std::stoi(getSafeStringValue(meta, "max_results", "0"));
-					pageInfo.currentPage = currentPage;
-					pageInfo.totalPages = (totalResults / resultsPerPage) + std::min(1, totalResults % resultsPerPage);
-					pageInfo.totalResults = totalResults;
+					pageInfo.currentPage = std::stoi(getSafeStringValue(pagination, "page", "0"));
+					pageInfo.totalResults = std::stoi(getSafeStringValue(pagination, "total", "0"));
+					pageInfo.totalPages = std::stoi(getSafeStringValue(pagination, "pages", "0"));
 				}
 				catch (...) {}
 			}
-			std::vector<const TiXmlElement*> elements;
+			std::vector<TiXmlElementLoaderInfo> elements;
 			for (const TiXmlElement* e = root->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
 				elements.push_back(e);
-			AddToList(elements, false);
+			AddToList(elements, ModXMLData::Source::Overview);
 
 			// Nothing found? Notify!
 			if (elements.empty())

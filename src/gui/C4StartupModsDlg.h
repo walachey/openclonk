@@ -45,13 +45,24 @@ struct ModXMLData
 	std::string title;
 	std::string id;
 	std::string description;
+	std::string slug;
 
-	ModXMLData(const TiXmlElement *xml, bool isLocalData = false);
+	// Depending on the origin of the data, we might need an update query before doing anything.
+	enum class Source
+	{
+		Unknown,
+		Local,
+		Overview,
+		DetailView
+	};
+	Source source{ Source::Unknown };
+	bool requiresUpdate() const { return source != Source::DetailView; }
+
+	ModXMLData(const TiXmlElement *xml, Source source = Source::Unknown);
 	~ModXMLData();
 
 	// Used to write the element to a file in case the mod gets installed.
 	TiXmlNode *originalXMLElement{ nullptr };
-	bool isLoadedFromLocal{ false };
 };
 
 class C4StartupModsLocalModDiscovery : public StdThread
@@ -141,6 +152,7 @@ private:
 
 		std::string modID;
 		std::string name;
+		std::string slug;
 
 		ModInfo() : localDiscoveryCheck(*this) {}
 		ModInfo(const C4StartupModsListEntry *entry);
@@ -160,7 +172,7 @@ private:
 		std::tuple<size_t, size_t> GetProgress() const { return std::make_tuple(downloadedBytes, totalBytes); }
 		bool WasSuccessful() const { return successful; }
 		bool IsBusy() const { return postClient.get() != nullptr; }
-		bool RequiresMetadataUpdate() const { return hasOnlyCachedInformation; }
+		bool RequiresMetadataUpdate() const { return hasOnlyIncompleteInformation; }
 		std::string GetErrorMessage() const { if (errorMessage.empty()) return ""; return name + ": " + errorMessage; }
 		std::string GetPath();
 
@@ -179,8 +191,8 @@ private:
 		} localDiscoveryCheck;
 	private:
 		bool successful{ false };
-		// Whether the information might be outdated and needs an update prior to hash-checking.
-		bool hasOnlyCachedInformation{ false };
+		// Whether the information might be outdated or incomplete and needs an update prior to hash-checking.
+		bool hasOnlyIncompleteInformation{ true };
 		size_t downloadedBytes{ 0 };
 		size_t totalBytes{ 0 };
 		std::unique_ptr<C4Network2HTTPClient> postClient;
@@ -279,7 +291,7 @@ protected:
 	C4GUI::Element* GetNextLower(int32_t sortOrder); // returns the element before which this element should be inserted
 
 public:
-	void FromXML(const TiXmlElement *xml, bool isLocalData = false);
+	void FromXML(const TiXmlElement *xml, ModXMLData::Source source, std::string fallbackID="", std::string fallbackName="");
 	const ModXMLData &GetModXMLData() const { assert(modXMLData); return *modXMLData.get(); }
 	void ClearRef();    // del any ref/refclient/error data
 
@@ -305,8 +317,8 @@ public:
 	std::string GetTitle() const { return GetModXMLData().title; }
 	const std::vector<ModXMLData::FileInfo> & GetFileInfos() const { return GetModXMLData().files; }
 	std::string GetID() const { return GetModXMLData().id; }
-	bool IsInstalled() const { return isInstalled; }
-	bool IsLoadedFromLocal() const { return GetModXMLData().isLoadedFromLocal; }
+	bool IsInstalled() const { return isInstalled || IsLoadedFromLocal(); }
+	bool IsLoadedFromLocal() const { return GetModXMLData().source == ModXMLData::Source::Local; }
 };
 
 // startup dialog: Network game selection
@@ -372,7 +384,17 @@ private:
 	void QueryModList(bool loadNextPage=false);
 	void ClearList();
 	void UpdateList(bool fGotReference = false, bool onlyWithLocalFiles = false);
-	void AddToList(std::vector<const TiXmlElement*> elements, bool isLocalData);
+	// When loading from local files, we must pass a fallback ID in case the XML is corrupted.
+	// Otherwise, it wouldn't be possible to even delete installed mods without a valid XML file.
+	struct TiXmlElementLoaderInfo
+	{
+		TiXmlElementLoaderInfo(const TiXmlElement* element, std::string id="", std::string name="") :
+			element(element), id(id), name(name) {}
+		const TiXmlElement* element;
+		const TiXmlElement* operator->() const { return element; }
+		std::string id, name;
+	};
+	void AddToList(std::vector<TiXmlElementLoaderInfo> elements, ModXMLData::Source source);
 	void UpdateCollapsed();
 	void UpdateSelection(bool fUpdateCollapsed);
 	void CheckRemoveMod();
