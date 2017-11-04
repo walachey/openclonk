@@ -5,18 +5,16 @@
 	@author boni
 */
 
-local definition;
+local definition;		// this definition is being built here
 local direction;
 local stick_to;
-local full_material; // true when all needed material is in the site
-local no_cancel; // if true, site cannot be cancelled
+local full_material;	// true when all needed material is in the site
+local no_cancel;		// if true, site cannot be cancelled
 local is_constructing;
 
 // This should be recongnized as a container by the interaction menu independent of its category.
 public func IsContainer() { return !full_material; }
-// disallow taking stuff out
-public func RefuseTransfer(object toMove) { return true; } // TODO: this is not used by another function, is this a callback?
-// disallow site cancellation. Useful e.g. for sites that are pre-placed for a game goal
+// Disallow site cancellation. Useful e.g. for sites that are pre-placed for a game goal
 public func MakeUncancellable() { no_cancel = true; return true; }
 
 /*-- Testing / Development --*/
@@ -35,7 +33,7 @@ public func HasInteractionMenu() { return true; }
 
 public func GetInteractionMenuEntries(object clonk)
 {
-	// default design of a control menu item
+	// Default design of a control menu item
 	var custom_entry = 
 	{
 		Right = "100%", Bottom = "2em",
@@ -116,17 +114,24 @@ public func OnInteractionControl(id symbol, string action, object clonk)
 	}
 }
 
+/*-- Engine callbacks --*/
+
 public func Deconstruct()
 {
-	// Remove Site
-	if (!no_cancel)
+	// Remove site
+	if (no_cancel)
 	{
-		for(var obj in FindObjects(Find_Container(this)))
-			obj->Exit();
+		return false;
+	}
+	else
+	{
+		for (var contained in FindObjects(Find_Container(this)))
+		{
+			contained->Exit();
+		}
 		RemoveObject();
 		return true;
 	}
-	return false;
 }
 
 public func Construction()
@@ -137,6 +142,43 @@ public func Construction()
 	
 	return true;
 }
+
+// Scenario saving
+func SaveScenarioObject(props)
+{
+	if (!inherited(props, ...)) return false;
+	props->Remove("Name");
+	if (definition) props->AddCall("Definition", this, "Set", definition, direction, stick_to);
+	if (no_cancel) props->AddCall("NoCancel", this, "MakeUncancellable");
+	return true;
+}
+
+// Only allow collection if needed
+public func RejectCollect(id def, object obj)
+{
+	var max = definition->GetComponent(def);
+	
+	// Not a component?
+	if (max == 0)
+	{
+		return true;
+	}
+	// Reject collection if full
+	return GetAvailableComponentCount(def) >= max;
+}
+
+// Check if full
+public func Collection2(object obj)
+{
+	UpdateStatus(obj);
+}
+
+// Component removed (e.g.: Contained wood burned down or some externel scripts went havoc)
+// Make sure lists are updated
+public func ContentsDestruction(object obj) { return UpdateStatus(); }
+public func Ejection(object obj) { return UpdateStatus(); }
+
+/*-- Internals --*/
 
 public func Set(id def, int dir, object stick)
 {
@@ -157,18 +199,7 @@ public func Set(id def, int dir, object stick)
 	// Draw the building with a wired frame and large alpha unless site graphics is overloaded by definition
 	if (!definition->~SetConstructionSiteOverlay(this, direction, stick_to))
 	{
-		SetGraphics(nil, nil, 0);
-		SetGraphics(nil, def, 1, GFXOV_MODE_Base);
-		SetClrModulation(RGBa(255, 255, 255, 128), 1);
-		// If the structure is a mesh, use wire frame mode to show the site.
-		// TODO: use def->IsMesh() once this becomes available.
-		if (def->GetMeshMaterial())
-		{
-			SetClrModulation(RGBa(255, 255, 255, 50), 1);
-			SetGraphics(nil, def, 2, GFXOV_MODE_Base, nil, GFX_BLIT_Wireframe);
-		}
-		SetObjDrawTransform((1 - dir * 2) * 1000, 0, 0, 0, 1000, -h * 500, 1);
-		SetObjDrawTransform((1 - dir * 2) * 1000, 0, 0, 0, 1000, -h * 500, 2);
+		SetConstructionSiteOverlayDefault(def, direction, stick_to, w, h);
 	}
 
 	SetName(Format(Translate("TxtConstruction"), def->GetName()));
@@ -177,54 +208,47 @@ public func Set(id def, int dir, object stick)
 	return;
 }
 
-// Scenario saving
-func SaveScenarioObject(props)
+
+private func SetConstructionSiteOverlayDefault(id def, int dir, object stick, int w, int h)
 {
-	if (!inherited(props, ...)) return false;
-	props->Remove("Name");
-	if (definition) props->AddCall("Definition", this, "Set", definition, direction, stick_to);
-	if (no_cancel) props->AddCall("NoCancel", this, "MakeUncancellable");
-	return true;
+	SetGraphics(nil, nil, 0);
+	SetGraphics(nil, def, 1, GFXOV_MODE_Base);
+	SetClrModulation(RGBa(255, 255, 255, 128), 1);
+	// If the structure is a mesh, use wire frame mode to show the site.
+	// TODO: use def->IsMesh() once this becomes available.
+	if (def->GetMeshMaterial())
+	{
+		SetClrModulation(RGBa(255, 255, 255, 50), 1);
+		SetGraphics(nil, def, 2, GFXOV_MODE_Base, nil, GFX_BLIT_Wireframe);
+	}
+	SetObjDrawTransform((1 - dir * 2) * 1000, 0, 0, 0, 1000, -h * 500, 1);
+	SetObjDrawTransform((1 - dir * 2) * 1000, 0, 0, 0, 1000, -h * 500, 2);
 }
 
-// only allow collection if needed
-public func RejectCollect(id def, object obj)
-{
-	var max = definition->GetComponent(def);
-	
-	// not a component?
-	if(max == 0)
-		return true;
-	if(ContentsCount(def) < max)
-		return false;
-	
-	return true;
-}
 
-// check if full
-public func Collection2(object obj)
+private func UpdateStatus(object item)
 {
 	// Ignore any activity during construction
 	if (is_constructing) return;
 	
-	// update message
+	// Update message
 	ShowMissingComponents();
 	
 	// Update possibly open menus.
 	UpdateInteractionMenus(this.GetMissingMaterialMenuEntries);
 	
 	// Update preview image
-	if (definition) definition->~SetConstructionSiteOverlay(this, direction, stick_to, obj);
+	if (definition) definition->~SetConstructionSiteOverlay(this, direction, stick_to, item);
 	
-	// check if we're done?
-	if(full_material)
-		StartConstructing(obj->GetController());
+	// Check if we're done?
+	if (full_material)
+	{
+		var controller = GetOwner();
+		if (item) controller = item->GetController();
+		StartConstructing(controller);
+	}
 }
 
-// component removed (e.g.: Contained wood burned down or some externel scripts went havoc)
-// Make sure lists are updated
-public func ContentsDestruction(object obj) { return Collection2(nil); }
-public func Ejection(object obj) { return Collection2(nil); }
 
 private func ShowMissingComponents()
 {
@@ -244,30 +268,31 @@ private func ShowMissingComponents()
 	CustomMessage(msg, this, NO_OWNER, 0, dy);
 }
 
+
 private func GetMissingComponents()
 {
-	if(definition == nil)
-		return;
+	if (definition == nil)
+		return [];
 	
-	if(full_material == true)
-		return nil;
+	if (full_material == true)
+		return [];
 	
-	// set false again as soon as we find a missing component
+	// Set false again as soon as we find a missing component
 	full_material = true;
 	
-	// check for material
-	var comp, index = 0;
+	// Check for material
+	var component, index = 0;
 	var missing_material = CreateArray();
-	while (comp = definition->GetComponent(nil, index))
+	while (component = definition->GetComponent(nil, index))
 	{
-		// find material
-		var max_amount = definition->GetComponent(comp);
-		var c = ContentsCount(comp);
-		var dif = max_amount-c;
+		// Find material
+		var max_amount = definition->GetComponent(component);
+		var current_amount = GetAvailableComponentCount(component);
+		var diff = max_amount - current_amount;
 		
-		if(dif > 0)
+		if (diff > 0)
 		{
-			PushBack(missing_material, {id=comp, count=dif});
+			PushBack(missing_material, {id=component, count=diff});
 			full_material = false;
 		}		
 		
@@ -277,129 +302,181 @@ private func GetMissingComponents()
 	return missing_material;
 }
 
+
 private func StartConstructing(int by_player)
 {
-	if(!definition)
+	if (!definition || !full_material)
 		return;
-	if(!full_material)
-		return;
-	
+
 	is_constructing = true;
-	
-	// find all objects on the bottom of the area that are not stuck
-	var wdt = GetObjWidth();
-	var hgt = GetObjHeight();
-	var lying_around = FindObjects(Find_Category(C4D_Vehicle | C4D_Object | C4D_Living), Find_AtRect(-wdt/2 - 2, -hgt, wdt + 2, hgt + 12), Find_OCF(OCF_InFree), Find_NoContainer());
-	
-	// create the construction, below surface constructions don't perform any checks.
-	// uncancellable sites (for special game goals) are forced and don't do checks either
-	var site;
-	var checks = !definition->~IsBelowSurfaceConstruction() && !no_cancel;
-	if(!(site = CreateConstruction(definition, 0, 0, GetOwner(), 1, checks, checks)))
+
+	// Find all objects on the bottom of the area that are not stuck
+	var lying_around = GetObjectsLyingAround();
+
+	// Create the site?
+	var site = CreateConstructionSite();
+	if (site)
 	{
-		// spit out error message. This could happen if the landscape changed in the meantime
-		// a little hack: the message would immediately vanish because this object is deleted. So, instead display the
-		// message on one of the contents.
-		if(Contents(0))
-			CustomMessage("$TxtNoConstructionHere$", Contents(0), GetOwner(), nil,nil, RGB(255,0,0));
-		Deconstruct();
-		return;
+		StartConstructionEffect(site, by_player);
 	}
 	
-	if(direction)
+	// Clean up stuck objects
+	EnsureObjectsLyingAround(lying_around);
+}
+
+
+// Create the construction, below surface constructions don't perform any checks.
+// Uncancellable sites (for special game goals) are forced and don't do checks either
+private func CreateConstructionSite()
+{
+	var checks = !definition->~IsBelowSurfaceConstruction() && !no_cancel;
+	var site = CreateConstruction(definition, 0, 0, GetOwner(), 1, checks, checks);
+
+	if (!site)
+	{
+		// Spit out error message. This could happen if the landscape changed in the meantime
+		// a little hack: the message would immediately vanish because this object is deleted. So, instead display the
+		// message on one of the contents.
+		if (Contents(0))
+		{
+			CustomMessage("$TxtNoConstructionHere$", Contents(0), GetOwner(), nil,nil, RGB(255, 0, 0));
+		}
+		Deconstruct();
+		return nil;
+	}
+
+	// Apply direction
+	if (direction)
+	{
 		site->SetDir(direction);
+	}
 	// Inform about sticky building
 	if (stick_to)
+	{
 		site->CombineWith(stick_to);
+	}
 	
+	return site;
+}
+
+
+private func StartConstructionEffect(object site, int by_player)
+{
 	// Object provides custom construction effects?
 	if (!site->~DoConstructionEffects(this))
 	{
 		// If not: Autoconstruct 2.0!
-		Schedule(site, "DoCon(2)",1,50);
-		Schedule(this,"RemoveObject()",1);
+		Schedule(site, "DoCon(2)", 1, 50);
+		Schedule(this, "RemoveObject()", 1);
 		Global->ScheduleCall(nil, Global.GameCallEx, 51, 1, "OnConstructionFinished", site, by_player);
 		site->Sound("Structures::FinishBuilding");
 	}
-	
-	// clean up stuck objects
-	for(var o in lying_around)
-	{
-		if (!o) continue;
-		
-		var x, y;
-		var dif = 0;
-		
-		x = o->GetX();
-		y = o->GetY();
-		
-		// move living creatures upwards till they stand on top.
-		if(o->GetOCF() & OCF_Alive)
-		{
-			while(o->GetContact(-1, CNAT_Bottom))
-			{
-				// only up to 20 pixel
-				if(dif > 20)
-				{
-					o->SetPosition(x,y);
-					break;
-				}
-				
-				dif++;
-				o->SetPosition(x, y-dif);
-			}
-		}
-		else {
-			while(o->Stuck())
-			{
-				// only up to 20 pixel
-				if(dif > 20)
-				{
-					o->SetPosition(x,y);
-					break;
-				}
-				
-				dif++;
-				o->SetPosition(x, y-dif);
-			}
-		}
-	}
 }
 
-func TakeConstructionMaterials(object from_clonk)
+
+private func TakeConstructionMaterials(object from_clonk)
 {
-	// check for material
-	var comp, index = 0;
-	var mat;
+	// Check for material
+	var component, index = 0;
+	var materials;
 	var w = definition->GetDefWidth() + 10;
 	var h = definition->GetDefHeight() + 10;
 
-	while (comp = definition->GetComponent(nil, index))
+	while (component = definition->GetComponent(nil, index))
 	{
-		// find material
-		var count_needed = definition->GetComponent(comp);
+		// Find material
+		var count_needed = definition->GetComponent(component);
 		index++;
 		
-		mat = CreateArray();
-		// 1. look for stuff in the clonk
-		mat[0] = FindObjects(Find_ID(comp), Find_Container(from_clonk));
-		// 2. look for stuff lying around
-		mat[1] = from_clonk->FindObjects(Find_ID(comp), Find_NoContainer(), Find_InRect(-w/2, -h/2, w,h));
-		// 3. look for stuff in nearby lorries/containers
+		materials = CreateArray();
+		// 1. Look for stuff in the clonk
+		materials[0] = FindObjects(Find_ID(component), Find_Container(from_clonk));
+		// 2. Look for stuff lying around
+		materials[1] = from_clonk->FindObjects(Find_ID(component), Find_NoContainer(), Find_InRect(-w/2, -h/2, w,h));
+		// 3. Look for stuff in nearby lorries/containers
 		var i = 2;
-		for(var cont in from_clonk->FindObjects(Find_Or(Find_Func("IsLorry"), Find_Func("IsContainer")), Find_InRect(-w/2, -h/2, w,h)))
-			mat[i] = FindObjects(Find_ID(comp), Find_Container(cont));
-		// move it
-		for(var mat2 in mat)
+		for (var container in from_clonk->FindObjects(Find_Or(Find_Func("IsLorry"), Find_Func("IsContainer")), Find_InRect(-w/2, -h/2, w,h)))
+			materials[i] = FindObjects(Find_ID(component), Find_Container(container));
+		// Move it
+		for (var material_list in materials)
 		{
-			for(var o in mat2)
+			for (var material in material_list)
 			{
-				if(count_needed <= 0)
+				if (count_needed <= 0)
+				{
 					break;
-				o->Exit();
-				o->Enter(this);
+				}
+				material->Exit();
+				material->Enter(this);
 				count_needed--;
 			}
 		}
 	}
 }
+
+
+// Gets the number of available components of a type.
+// This defaults to ContentsCount(), but can be overloaded
+// for implementations of the construction site.
+private func GetAvailableComponentCount(id component)
+{
+	return ContentsCount(component);
+}
+
+
+// Find all objects on the bottom of the area that are not stuck
+private func GetObjectsLyingAround()
+{
+	var wdt = GetObjWidth();
+	var hgt = GetObjHeight();
+	return FindObjects(Find_Category(C4D_Vehicle | C4D_Object | C4D_Living), Find_AtRect(-wdt/2 - 2, -hgt, wdt + 2, hgt + 12), Find_OCF(OCF_InFree), Find_NoContainer());
+}
+
+
+// Clean up stuck objects
+private func EnsureObjectsLyingAround(array lying_around)
+{
+	for (var thing in lying_around)
+	{
+		if (!thing) continue;
+		
+		var x, y;
+		var moved = 0;
+		
+		x = thing->GetX();
+		y = thing->GetY();
+		
+		// Move living creatures upwards till they stand on top.
+		if (thing->GetOCF() & OCF_Alive)
+		{
+			while (thing->GetContact(-1, CNAT_Bottom))
+			{
+				// Only up to 20 pixel
+				if (moved > 20)
+				{
+					thing->SetPosition(x, y);
+					break;
+				}
+				
+				moved++;
+				thing->SetPosition(x, y - moved);
+			}
+		}
+		else
+		{
+			while (thing->Stuck())
+			{
+				// Only up to 20 pixel
+				if (moved > 20)
+				{
+					thing->SetPosition(x, y);
+					break;
+				}
+				
+				moved++;
+				thing->SetPosition(x, y - moved);
+			}
+		}
+	}
+}
+

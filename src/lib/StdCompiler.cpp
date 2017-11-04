@@ -307,11 +307,16 @@ void StdCompilerINIWrite::Character(char &rChar)
 
 void StdCompilerINIWrite::String(char *szString, size_t iMaxLength, RawCompileType eType)
 {
+	StringN(szString, strnlen(szString, iMaxLength), eType);
+}
+
+void StdCompilerINIWrite::StringN(const char *szString, size_t iLength, RawCompileType eType)
+{
 	PrepareForValue();
 	switch (eType)
 	{
 	case RCT_Escaped:
-		WriteEscaped(szString, szString + strlen(szString));
+		WriteEscaped(szString, szString + iLength);
 		break;
 	case RCT_All:
 	case RCT_Idtf:
@@ -323,8 +328,10 @@ void StdCompilerINIWrite::String(char *szString, size_t iMaxLength, RawCompileTy
 
 void StdCompilerINIWrite::String(char **pszString, RawCompileType eType)
 {
+	assert(pszString);
 	char cNull = '\0';
-	String(*pszString ? *pszString : &cNull, 0, eType);
+	char * szString = *pszString ? *pszString : &cNull;
+	String(szString, strlen(szString), eType);
 }
 
 void StdCompilerINIWrite::Raw(void *pData, size_t iSize, RawCompileType eType)
@@ -344,7 +351,7 @@ void StdCompilerINIWrite::Raw(void *pData, size_t iSize, RawCompileType eType)
 
 void StdCompilerINIWrite::String(std::string &str, RawCompileType type)
 {
-	Raw(&str[0], str.size(), type);
+	StringN(str.c_str(), str.size(), type);
 }
 
 void StdCompilerINIWrite::Begin()
@@ -575,7 +582,7 @@ int StdCompilerINIRead::NameCount(const char *szName)
 	return iCount;
 }
 
-const char *StdCompilerINIRead::GetNameByIndex(size_t idx) const 
+const char *StdCompilerINIRead::GetNameByIndex(size_t idx) const
 {
 	// not in virtual naming
 	if (iDepth > iRealDepth || !pName) return nullptr;

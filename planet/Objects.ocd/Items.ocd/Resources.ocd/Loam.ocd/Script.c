@@ -63,6 +63,8 @@ func FxIntBridgeStart(object clonk, effect fx, int temp, int x, int y)
 		R = 200, G = 150, B = 50,
 		Size = PV_KeyFrames(0, 0, 1, 100, 3, 1000, 2),
 	};
+	// Let the player know the clonk is about to do stuff
+	clonk->PlayAnimation("Dig", CLONK_ANIM_SLOT_Movement, Anim_Linear(0,0, clonk->GetAnimationLength("Dig"), 35, ANIM_Loop), Anim_Const(1000));
 	return FX_OK;
 }
 
@@ -248,6 +250,11 @@ public func GetInventoryIconOverlay()
 }
 
 public func IsFoundryProduct() { return true; }
+public func GetSubstituteComponent(id component) // Can be made from earth or sand
+{
+	if (component == Earth)
+		return Sand;
+}
 
 local Collectible = 1;
 local Name = "$Name$";

@@ -7,7 +7,7 @@ public func RejectCollect() { return true; }
 public func Construction()
 {
 	inherited(...);
-	
+
 	PlayAnimation("Close", 5, Anim_Linear(0, 0, GetAnimationLength("Close"), 1, ANIM_Hold));
 	is_open = false;
 }
@@ -37,7 +37,7 @@ public func Open(clonk)
 	GameCall("OnChestOpened", clonk);
 	Sound("Toot");
 	ScheduleCall(this, "DoTheConfetti", 2, 20);
-	return inherited(clonk, ...);
+	return inherited();
 }
 
 public func DoTheConfetti()

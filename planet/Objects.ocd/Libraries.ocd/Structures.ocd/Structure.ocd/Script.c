@@ -53,11 +53,15 @@ public func Damage(int change, int cause, int cause_plr)
 	if (this && this.HitPoints != nil)
 	{
 		if (GetDamage() >= this.HitPoints)
-		{		
+		{
 			// Remove contents from the building depending on the type of damage.
 			EjectContentsOnDestruction(cause, cause_plr);
-			// Destruction callback is made by the engine.
-			return RemoveObject();
+			// Handle detruction with a custom callback? If not, remove the object.
+			if (!this->~OnNoHitPointsRemaining(cause, cause_plr))
+			{
+				// Destruction callback is made by the engine.
+				return RemoveObject();
+			}
 		}
 		// Update all interaction menus with the new hitpoints.
 		UpdateInteractionMenus(this.GetDamageMenuEntries);
@@ -99,10 +103,13 @@ private func EjectContentsOnDestruction(int cause, int by_player)
 public func SetBasement(object to_basement)
 {
 	lib_structure.basement = to_basement;
-	if (lib_structure.basement)
-		this.EditorActions.basement = nil;
-	else
-		this.EditorActions.basement = new GetID().EditorActions.basement {};
+	if (this.EditorActions)
+	{
+		if (lib_structure.basement)
+			this.EditorActions.basement = nil;
+		else
+			this.EditorActions.basement = new GetID().EditorActions.basement {};
+	}
 	return;
 }
 
@@ -120,7 +127,7 @@ public func IsStructureWithoutBasement()
 public func AddBasement()
 {
 	var offset = this->~GetBasementOffset() ?? [0, 0];
-	var basement = CreateObject(Basement, offset[0], GetBottom() + 4 + offset[1]);
+	var basement = CreateObject(this->~GetBasementID() ?? Basement, offset[0], GetBottom() + 4 + offset[1]);
 	basement->SetParent(this);
 	return;
 }

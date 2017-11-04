@@ -220,7 +220,7 @@ public func InitializePlayer(int plr)
 	if (!initial_relaunch || !perform_restart)
 		return;	
 	// Scenario script callback.
-	if (GameCall("OnPlayerRelaunch", plr, false))
+	if (GameCallEx("OnPlayerRelaunch", plr, false))
 		return;
 	return DoRelaunch(plr, nil, nil, true);
 }
@@ -241,7 +241,7 @@ public func OnClonkDeath(object clonk, int killer)
 			return;
 		}
 	}
-	if (GameCall("OnPlayerRelaunch", plr, true))
+	if (GameCallEx("OnPlayerRelaunch", plr, true))
 		return;
 	return DoRelaunch(plr, clonk, nil);
 }
@@ -393,6 +393,8 @@ public func SaveScenarioObject(props, ...)
 		props->AddCall("FreeCrew", this, "SetFreeCrew", free_crew);
 	if (respawn_at_base)
 		props->AddCall("BaseRespawn", this, "SetBaseRespawn", respawn_at_base);
+	props->RemoveCreation();
+	props->Add(SAVEOBJ_Creation, "GetRelaunchRule()");
 	return true;
 }
 

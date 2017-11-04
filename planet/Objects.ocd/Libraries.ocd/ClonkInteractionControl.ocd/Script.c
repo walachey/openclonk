@@ -74,7 +74,7 @@ public func ObjectControl(int plr, int ctrl, int x, int y, int strength, bool re
 	return inherited(plr, ctrl, x, y, strength, repeat, status, ...);
 }
 
-private func FxIntHighlightInteractionStart(object target, proplist fx, temp, proplist interaction, proplist interaction_help)
+private func FxIntHighlightInteractionStart(object target, proplist fx, temp, proplist interaction, int nr_interactions)
 {
 	if (temp) return;
 	fx.obj = interaction.interaction_object;
@@ -104,8 +104,11 @@ private func FxIntHighlightInteractionStart(object target, proplist fx, temp, pr
 	}
 	var multiple_interactions_hint = "";
 	if (fx.interaction.has_multiple_interactions)
-		multiple_interactions_hint = Format("<c 999999>[%s] $More$..</c>", GetPlayerControlAssignment(GetOwner(), CON_Up, true, false));
-	fx.dummy->Message("@<c eeffee>%s</c>|%s|", fx.interaction_help.help_text, multiple_interactions_hint);
+		multiple_interactions_hint = Format("|<c 999999>[%s] $More$..</c>", GetPlayerControlAssignment(GetOwner(), CON_Up, true, false));
+	var cycle_interactions_hint = "";
+	if (nr_interactions > 1)
+		cycle_interactions_hint = Format("|<c 999999>[%s/%s] $Cycle$..</c>", GetPlayerControlAssignment(GetOwner(), CON_Left, true, false), GetPlayerControlAssignment(GetOwner(), CON_Right, true, false));
+	fx.dummy->Message("@<c eeffee>%s</c>%s%s|", fx.interaction_help.help_text, multiple_interactions_hint, cycle_interactions_hint);
 
 	// Center dummy!
 	fx.dummy->SetVertexXY(0, fx.obj->GetVertex(0, VTX_X), fx.obj->GetVertex(0, VTX_Y));
@@ -187,8 +190,9 @@ private func SetNextInteraction(proplist to)
 		RemoveEffect(nil, this, e);
 	// And set & mark new one.
 	this.control.interaction_hud_controller->SetCurrentInteraction(to);
+	var interaction_cnt = GetLength(GetInteractableObjects());
 	if (to)
-		AddEffect("IntHighlightInteraction", this, 1, 2, this, nil, to);
+		AddEffect("IntHighlightInteraction", this, 1, 2, this, nil, to, interaction_cnt);
 }
 
 private func FindNextInteraction(proplist start_from, int x_dir)
@@ -370,6 +374,7 @@ func GetInteractableObjects(array sort)
 				actiontype = ACTIONTYPE_EXTRA
 			});
 	}
+
 	// Make sure that the Clonk's action target is always shown.
 	// You can push a lorry out of your bounding box and would, otherwise, then be unable to release it.
 	var main_criterion = Find_AtRect(-5, -10, 10, 20);
@@ -378,54 +383,55 @@ func GetInteractableObjects(array sort)
 	{
 		main_criterion = Find_Or(main_criterion, Find_InArray([action_target]));
 	}
+
 	// add interactables (script interface)
 	var interactables = FindObjects(
 		main_criterion,
 		Find_Or(Find_OCF(OCF_Grab), Find_Func("IsInteractable", this), Find_OCF(OCF_Entrance)),
 		Find_NoContainer(), Find_Layer(GetObjectLayer()),
 		sort);
-	for(var interactable in interactables)
+	for (var interactable in interactables)
 	{
-		var icnt = interactable->~GetInteractionCount() ?? 1;
-		
-		if (!can_only_use_container)
+		var interaction_count = interactable->~GetInteractionCount() ?? 1;
+		var uses_container = interactable == Contained();
+		var can_be_grabbed = interactable->GetOCF() & OCF_Grab;
+		var has_script_interaction = interactable->~IsInteractable(this);
+
+		// handle the script interactions first
+		// one object could have a scripted interaction AND be a vehicle
+		if (has_script_interaction && (!can_only_use_container || uses_container))
+		for(var index = 0; index < interaction_count; index++)
 		{
-			// first the script
-			// one object could have a scripted interaction AND be a vehicle
-			if (interactable->~IsInteractable(this))
-				for(var j = 0; j < icnt; j++)
+			PushBackInteraction(possible_interactions,
 				{
-					PushBackInteraction(possible_interactions,
-						{
-							interaction_object = interactable,
-							priority = 9,
-							interaction_index = j,
-							extra_data = nil,
-							actiontype = ACTIONTYPE_SCRIPT
-						});
-				}
-			// check whether further interactions are possible
-	
-			// can be grabbed? (vehicles/chests..)
-			if (interactable->GetOCF() & OCF_Grab)
-			{
-				var priority = 19;
-				// not if swimming because the grab command cannot really fix that (unlike e.g. scale/hangle)
-				if (GetProcedure() == "SWIM")
-					if (!this->~CanGrabUnderwater(interactable)) // unless it's a special clonk that can grab underwater. It needs to define a callback then.
-						continue;
-				// high priority if already grabbed
-				if (GetActionTarget() == interactable) priority = 0;
-				
-				PushBackInteraction(possible_interactions,
-					{
-						interaction_object = interactable,
-						priority = priority,
-						interaction_index = nil,
-						extra_data = nil,
-						actiontype = ACTIONTYPE_VEHICLE
-					});
-			}
+					interaction_object = interactable,
+					priority = 9,
+					interaction_index = index,
+					extra_data = nil,
+					actiontype = ACTIONTYPE_SCRIPT
+				});
+		}
+		
+		// check whether further interactions are possible
+		// can be grabbed? (vehicles/chests..)
+		if (can_be_grabbed && !can_only_use_container)
+		{
+			var priority = 19;
+			// not if swimming because the grab command cannot really fix that (unlike e.g. scale/hangle)
+			if (GetProcedure() == "SWIM")
+				if (!this->~CanGrabUnderwater(interactable)) // unless it's a special clonk that can grab underwater. It needs to define a callback then.
+					continue;
+			// high priority if already grabbed
+			if (GetActionTarget() == interactable) priority = 0;
+			
+			PushBackInteraction(possible_interactions,
+				{
+					interaction_object = interactable,
+					priority = priority,
+					interaction_index = nil,
+					extra_data = nil,
+					actiontype = ACTIONTYPE_VEHICLE
+				});
 		}
 		
 		// Can be entered or exited?

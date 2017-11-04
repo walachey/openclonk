@@ -28,6 +28,8 @@
 // Contains proplists of format {Product = <objid>, Amount = <int>, Infinite = (optional)<bool>, ProducingPlayer = (optional)<int>}. /Infinite/ == true -> infinite production.
 local queue;
 
+// Possibly connected cable station
+local cable_station;
 
 protected func Initialize()
 {
@@ -177,7 +179,25 @@ public func OnProductHover(symbol, extra_data, desc_menu_target, menu_id)
 	var costs = ProductionCosts(product_id);
 	var cost_msg = "";
 	for (var comp in costs)
-		cost_msg = Format("%s %s {{%i}}", cost_msg, GetCostString(comp[1], CheckComponent(comp[0], comp[1])), comp[0]);
+	{
+		if (GetLength(cost_msg))
+			cost_msg = Format("%s +", cost_msg);
+		if (!comp[2])
+			cost_msg = Format("%s %s {{%i}}", cost_msg, GetCostString(comp[1], CheckComponent(comp[0], comp[1])), comp[0]);
+		else
+		{
+			if (GetType(comp[2]) == C4V_Array)
+			{
+				cost_msg = Format("%s (%s {{%i}}", cost_msg, GetCostString(comp[1], CheckComponent(comp[0], comp[1])), comp[0]);
+				for (var subs in comp[2])
+					cost_msg = Format("%s / %s {{%i}}", cost_msg, GetCostString(comp[1], CheckComponent(subs, comp[1])), subs);
+				cost_msg = Format("%s)", cost_msg);
+			} else {
+				cost_msg = Format("%s (%s {{%i}} / %s {{%i}})", cost_msg, GetCostString(comp[1], CheckComponent(comp[0], comp[1])), comp[0], GetCostString(comp[1], CheckComponent(comp[2], comp[1])), comp[2]);
+				//cost_msg = Format("%s %s ({{%i}} / {{%i}})", cost_msg, GetCostString(comp[1], CheckComponent(comp[0], comp[1])), comp[0], comp[2]);
+			}
+		}
+	}
 	if (this->~FuelNeed(product_id))
 		cost_msg = Format("%s %s {{Icon_Producer_Fuel}}", cost_msg, GetCostString(1, CheckFuel(product_id)));
 	if (this->~PowerNeed(product_id))
@@ -304,8 +324,9 @@ public func ProductionCosts(id item_id)
 	while (comp_id = item_id->GetComponent(nil, index))
 	{
 		var amount = item_id->GetComponent(comp_id);
-		comp_list[index] = [comp_id, amount];
-		index++;		
+		var substitute = item_id->~GetSubstituteComponent(comp_id);
+		comp_list[index] = [comp_id, amount, substitute];
+		index++;
 	}
 	return comp_list;
 }
@@ -508,7 +529,7 @@ private func Produce(id product, producing_player)
 {
 	// Already producing? Wait a little.
 	if (IsProducing())
-		return false;	
+		return false;
 		
 	// Check if components are available.
 	if (!CheckComponents(product))
@@ -538,9 +559,37 @@ private func CheckComponents(id product, bool remove)
 	{
 		var mat_id = item[0];
 		var mat_cost = item[1];
+		var mat_substitute = item[2];
 		if (!CheckComponent(mat_id, mat_cost))
-			return false; // Components missing.
-		else if (remove)
+		{
+			if (mat_substitute)
+			{
+				if (GetType(mat_substitute) == C4V_Array)
+				{
+					var found = false;
+					for (var substitute in mat_substitute) // Check all possible substitutes
+					{
+						if (CheckComponent(substitute, mat_cost))
+						{
+							mat_id = substitute;
+							found = true;
+							break;
+						}
+					}
+					if (!found)
+						return false; // Substitutes missing.
+				} else {
+					// Check substitute components
+					if (CheckComponent(mat_substitute, mat_cost))
+						mat_id = mat_substitute;
+					else
+						return false; // Substitute missing.
+				}
+			} else {
+				return false; // Components missing.
+			}
+		}
+		if (remove)
 		{
 			for (var i = 0; i < mat_cost; i++)
 			{
@@ -763,14 +812,23 @@ public func OnProductEjection(object product)
 }
 
 
-/*-- --*/
+/*-- Cable Network --*/
 
+public func IsNoCableStationConnected() { return !cable_station; }
+
+public func ConnectCableStation(object station)
+{
+	cable_station = station;
+}
 
 /**
 	Requests the necessary material from the cable network if available.
 */
-private func RequestAllMissingComponents(id item_id)
+func RequestAllMissingComponents(id item_id)
 {
+	if (!cable_station)
+		return false;
+
 	for (var item in ProductionCosts(item_id))
 	{
 		var mat_id = item[0];
@@ -782,14 +840,11 @@ private func RequestAllMissingComponents(id item_id)
 	return true;
 }
 
-
-// Must exist if Library_CableStation is not included by either this
-// library or the structure including this library.
 public func RequestObject(id item_id, int amount)
 {
-	return _inherited(item_id, amount, ...);
+	if (cable_station)
+		cable_station->AddRequest(item_id, amount);
 }
-
 
 /*-- Storage --*/
 
@@ -812,6 +867,16 @@ public func IsCollectionAllowed(object item)
 		{
 			if (component_id == item_id)
 				return true;
+			if (product->~GetSubstituteComponent(component_id))
+			{
+				var subs = product->GetSubstituteComponent(component_id);
+				if (GetType(subs) == C4V_Array)
+				{
+					if (IsValueInArray(subs, item_id))
+						return true;
+				} else if (subs == item_id)
+					return true;
+			}
 			i++;
 		}
 	}
