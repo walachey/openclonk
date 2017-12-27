@@ -70,15 +70,18 @@ protected func Initialize()
 	SetPhase(RandomX(1,16));
 
 	// Push low flying clouds up to proper height
-	while (MaterialDepthCheck(GetX(), GetY(), "Sky", 150) != true)
+	var xoff = 0, yoff = 0;
+	while (GetY() + yoff > 0 && !MaterialDepthCheck(xoff, yoff, "Sky", 150))
 	{
-		SetPosition(GetX(), GetY()-1);
+		yoff--;
 	}
 
 	// Failsafe for stupid grounded clouds
-	if (GetMaterial(0, 30) != Material("Sky")) 
-		SetPosition(GetX(), GetY() - 180);
-	
+	if (GetMaterial(xoff, yoff+30) != Material("Sky")) 
+		yoff -= 180;
+
+	SetPosition(GetX()+xoff, GetY()+yoff);
+
 	// Add effect to process all cloud features.
 	AddEffect("ProcessCloud", this, 100, 5, this);
 	return;
@@ -289,18 +292,25 @@ private func MoveCloud()
 	else
 		SetXDir(wind * 10, 1000);
 		
+	var x = GetX(), y = GetY();
 	// Loop clouds around the map.
-	if (GetX() >= LandscapeWidth() + wdt/2 - 10) 
-		SetPosition(12 - wdt/2, GetY());
-	else if (GetX() <= 10 - wdt/2) 
-		SetPosition(LandscapeWidth() + wdt/2 - 12, GetY());
+	if (x >= LandscapeWidth() + wdt/2 - 10) 
+		x = 12 - wdt/2;
+	else if (x <= 10 - wdt/2) 
+		x = LandscapeWidth() + wdt/2 - 12;
 		
 	// Some other safety.
-	if (GetY() <= 5) 
-		SetPosition(0, 6);
+	if (y <= 5) 
+		y = 6;
 	if (GetYDir() != 0) 
 		SetYDir(0);
-	while (Stuck()) 
+
+	if (x != GetX() || y != GetY())
+		SetPosition(x, y);
+
+	// We're moving the cloud to y = 6 above, so don't bother moving it higher
+	// than that.
+	while (Stuck() && GetY() > 10) 
 		SetPosition(GetX(), GetY() - 5);
 		
 	if (rain_sound_dummy)
@@ -417,7 +427,7 @@ private func DropHit(string material_name, int color, int x_orig, int y_orig)
 {
 	// Adjust position so that it's in the air.
 	var x = AbsX(x_orig), y = AbsY(y_orig);
-	while (GBackSemiSolid(x, y - 1)) y--;
+	while (y > 0 && GBackSemiSolid(x, y - 1)) y--;
 
 	// Add material at impact
 	if (rain_inserts_mat)
@@ -447,16 +457,16 @@ private func DropHit(string material_name, int color, int x_orig, int y_orig)
 	{
 		if( (material_name == "Acid" && GetMaterial(x,y) == Material("Earth")) || material_name == "Lava" || material_name == "DuroLava")
 			Smoke(x, y, 3, RGB(150,160,150));
-		CreateParticle("RaindropSplash", x, y-1, 0, 0, 5, Particles_Splash(color), 0);
+		CreateParticle("RaindropSplash", x, y, 0, 0, 5, Particles_Splash(color), 0);
 		if(material_name == "Ice")
 		{
 			particle_cache.hail = particle_cache.hail ?? Particles_Hail(color);
-			CreateParticle("Hail", x, y, RandomX(-2,2), -Random(10), PV_Random(300, 300), particle_cache.hail, 0);
+			CreateParticle("Hail", x, y - 1, RandomX(-2,2), -Random(10), PV_Random(300, 300), particle_cache.hail, 0);
 		}
 		else
 		{
 			particle_cache.small_rain = particle_cache.small_rain ?? Particles_RainSmall(color);
-			CreateParticle("RaindropSmall", x, y, RandomX(-4, 4), -Random(10), PV_Random(300, 300), particle_cache.small_rain, 0);
+			CreateParticle("SphereSpark", x, y - 1, PV_Random(-10, 10), PV_Random(-30, -10), PV_Random(200, 300), particle_cache.small_rain, 5);
 		}
 	}
 }

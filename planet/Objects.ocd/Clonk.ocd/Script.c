@@ -16,6 +16,14 @@
 
 #include Clonk_Animations
 
+static const CLONK_MESH_TRANSFORM_SLOT_Turn = 0;             // for turning the clonk
+static const CLONK_MESH_TRANSFORM_SLOT_Rotation_Scaling = 1; // for adjusting the rotation while scaling
+static const CLONK_MESH_TRANSFORM_SLOT_Translation_Hook = 2; // for adjusting the rotation while scaling
+static const CLONK_MESH_TRANSFORM_SLOT_Rotation_Hook = 3;    // for adjusting the rotation while scaling
+static const CLONK_MESH_TRANSFORM_SLOT_Rotation_Ladder = 5;  // for adjusting the rotation while climbing a rope ladder
+static const CLONK_MESH_TRANSFORM_SLOT_Scale = 6;            // for scaling the size of the clonk
+static const CLONK_MESH_TRANSFORM_SLOT_Translation_Dive = 7; // for adjusting the position while diving
+
 // ladder climbing
 #include Library_CanClimbLadder
 
@@ -1251,7 +1259,7 @@ local MaxBreath = 720; // Clonk can breathe for 20 seconds under water.
 local MaxMagic = 50000;
 local JumpSpeed = 400;
 local ThrowSpeed = 294;
-local NoBurnDecay = 1;
+local NoBurnDecay = true;
 local ContactIncinerate = 10;
 local BorderBound = C4D_Border_Sides;
 

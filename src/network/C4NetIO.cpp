@@ -2326,6 +2326,11 @@ struct C4NetIOUDP::BinAddr
 		return result;
 	}
 
+	StdStrBuf ToString() const
+	{
+		return static_cast<C4NetIO::addr_t>(*this).ToString();
+	}
+
 	uint16_t port;
 	uint8_t type{0};
 	union
@@ -3254,6 +3259,7 @@ void C4NetIOUDP::Peer::OnRecv(const C4NetIOPacket &rPacket) // (mt-safe)
 		}
 		// build ConnOk Packet
 		ConnOKPacket nPack;
+		bool fullyConnected = false;
 
 		nPack.StatusByte = IPID_ConnOK; // (always du, no mc experiments here)
 		nPack.Nr = fBroadcasted ? pParent->iOPacketCounter : iOPacketCounter;
@@ -3263,9 +3269,15 @@ void C4NetIOUDP::Peer::OnRecv(const C4NetIOPacket &rPacket) // (mt-safe)
 		else if (pParent->fMultiCast && addr.GetPort() == pParent->iPort)
 			nPack.MCMode = ConnOKPacket::MCM_MC; // du ok, try multicast next
 		else
+		{
 			nPack.MCMode = ConnOKPacket::MCM_NoMC; // du ok
+			// no multicast => we're fully connected now
+			fullyConnected = true;
+		}
 		// send it
 		SendDirect(C4NetIOPacket(&nPack, sizeof(nPack), false, addr));
+		// Clients will try sending data from OnConn, so send ConnOK before that.
+		if (fullyConnected) OnConn();
 	}
 	break;
 

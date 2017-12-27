@@ -1,5 +1,5 @@
 [DefCore]
-id=Library_AlignVehicleRotation
-Version=6,0
+id=Library_Switch
+Version=8,0
 Category=C4D_StaticBack
 HideInCreator=true

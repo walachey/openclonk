@@ -12,7 +12,7 @@
 */
 
 // Obviously, we don't want these items to burn down
-local NoBurnDecay = 1;
+local NoBurnDecay = true;
 // Items will burn for roughly 2 seconds until changing into a 'burned item' (no longer functional)
 // Feel free to change this time in your object (in frames)
 local BurnDownTime = 70;
@@ -63,8 +63,7 @@ public func BurnDown(int caused_by)
 	var container = Contained();
 	burned->SetR(GetR());
 	burned->Incinerate(100, caused_by);
-	//RemoveObject(true); // TODO: uncomment once bug #1950 has been resolved
-	RemoveObject();
+	RemoveObject(true);
 	if (container)
 		burned->Enter(container);
 }

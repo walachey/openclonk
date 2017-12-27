@@ -56,7 +56,8 @@ struct C4Landscape::P
 	std::unique_ptr<CSurface8> Map;
 	std::unique_ptr<CSurface8> MapBkg;
 	std::unique_ptr<C4LandscapeRender> pLandscapeRender;
-	std::vector<uint8_t> TopRowPix, BottomRowPix; // array size of landscape width: Filled with 0s for border pixels that are open and MCVehic for pixels that are closed
+	// array size of landscape width/height: Filled with 0s for border pixels that are open and MCVehic for pixels that are closed
+	std::vector<uint8_t> TopRowPix, BottomRowPix, LeftColPix, RightColPix;
 	int32_t Pix2Mat[C4M_MaxTexIndex], Pix2Dens[C4M_MaxTexIndex], Pix2Place[C4M_MaxTexIndex];
 	bool Pix2Light[C4M_MaxTexIndex];
 	int32_t PixCntPitch = 0;
@@ -72,7 +73,6 @@ struct C4Landscape::P
 
 	bool NoScan = false; // ExecuteScan() disabled
 	int32_t ScanX = 0, ScanSpeed = 2; // SyncClearance-NoSave //
-	int32_t LeftOpen = 0, RightOpen = 0, TopOpen = 0, BottomOpen = 0;
 	C4Real Gravity = DefaultGravAccel;
 	uint32_t Modulation = 0;    // landscape blit modulation; 0 means normal
 	int32_t MapSeed = 0; // random seed for MapToLandscape
@@ -94,7 +94,7 @@ struct C4Landscape::P
 	bool TexOZoom(C4Landscape *, const CSurface8 &sfcMap, const CSurface8 &sfcMapBkg, int32_t iMapX, int32_t iMapY, int32_t iMapWdt, int32_t iMapHgt, DWORD *dwpTextureUsage, int32_t iToX = 0, int32_t iToY = 0);
 	bool MapToSurface(C4Landscape *, const CSurface8 &sfcMap, const CSurface8 &sfcMapBkg, int32_t iMapX, int32_t iMapY, int32_t iMapWdt, int32_t iMapHgt, int32_t iToX, int32_t iToY, int32_t iToWdt, int32_t iToHgt, int32_t iOffX, int32_t iOffY);
 	bool MapToLandscape(C4Landscape *d, const CSurface8 &sfcMap, const CSurface8 &sfcMapBkg, int32_t iMapX, int32_t iMapY, int32_t iMapWdt, int32_t iMapHgt, int32_t iOffsX = 0, int32_t iOffsY = 0, bool noClear = false); // zoom map segment to surface (or sector surfaces)
-	bool InitTopAndBottomRowPix(); // init out-of-landscape pixels for bottom side
+	bool InitBorderPix(); // init out-of-landscape pixels for ALL sides
 	bool GetMapColorIndex(const char *szMaterial, const char *szTexture, BYTE &rbyCol) const;
 	//bool SkyToLandscape(int32_t iToX, int32_t iToY, int32_t iToWdt, int32_t iToHgt, int32_t iOffX, int32_t iOffY);
 	bool CreateMap(CSurface8*& sfcMap, CSurface8*& sfcMapBkg); // create map by landscape attributes
@@ -361,17 +361,6 @@ int32_t C4Landscape::P::DoScan(C4Landscape *d, int32_t cx, int32_t cy, int32_t m
 	// return pixel converted
 	return Abs(cy2 - cy);
 }
-
-void C4Landscape::ScanSideOpen()
-{
-	int32_t cy;
-	for (cy = 0; (cy < p->Height) && !GetPix(0, cy); cy++) {}
-	p->LeftOpen = cy;
-	for (cy = 0; (cy < p->Height) && !GetPix(p->Width - 1, cy); cy++) {}
-	p->RightOpen = cy;
-}
-
-
 
 void C4Landscape::Draw(C4TargetFacet &cgo, C4FoWRegion *pLight)
 {
@@ -1359,13 +1348,6 @@ void C4Landscape::ScenarioInit()
 {
 	// Gravity
 	p->Gravity = C4REAL100(Game.C4S.Landscape.Gravity.Evaluate()) * DefaultGravAccel;
-	// Opens
-	p->LeftOpen = Game.C4S.Landscape.LeftOpen;
-	p->RightOpen = Game.C4S.Landscape.RightOpen;
-	p->TopOpen = Game.C4S.Landscape.TopOpen;
-	p->BottomOpen = Game.C4S.Landscape.BottomOpen;
-	// Side open scan
-	if (Game.C4S.Landscape.AutoScanSideOpen) ScanSideOpen();
 }
 
 void C4Landscape::Clear(bool fClearMapCreator, bool fClearSky, bool fClearRenderer)
@@ -1377,6 +1359,8 @@ void C4Landscape::Clear(bool fClearMapCreator, bool fClearSky, bool fClearRender
 	if (fClearRenderer) { p->pLandscapeRender.reset(); }
 	p->TopRowPix.clear();
 	p->BottomRowPix.clear();
+	p->LeftColPix.clear();
+	p->RightColPix.clear();
 	p->Surface8.reset();
 	p->Surface8Bkg.reset();
 	p->Map.reset();
@@ -1402,10 +1386,6 @@ void C4Landscape::Clear(bool fClearMapCreator, bool fClearSky, bool fClearRender
 void C4Landscape::CompileFunc(StdCompiler *pComp)
 {
 	pComp->Value(mkNamingAdapt(p->MapSeed, "MapSeed", 0));
-	pComp->Value(mkNamingAdapt(p->LeftOpen, "LeftOpen", 0));
-	pComp->Value(mkNamingAdapt(p->RightOpen, "RightOpen", 0));
-	pComp->Value(mkNamingAdapt(p->TopOpen, "TopOpen", 0));
-	pComp->Value(mkNamingAdapt(p->BottomOpen, "BottomOpen", 0));
 	pComp->Value(mkNamingAdapt(mkCastIntAdapt(p->Gravity), "Gravity", DefaultGravAccel));
 	pComp->Value(mkNamingAdapt(p->Modulation, "MatModulation", 0U));
 	pComp->Value(mkNamingAdapt(mkCastIntAdapt(p->mode), "Mode", LandscapeMode::Undefined));
@@ -1633,7 +1613,7 @@ bool C4Landscape::Init(C4Group &hGroup, bool fOverloadCurrent, bool fLoadSky, bo
 	}
 
 	// Init out-of-landscape pixels for bottom
-	p->InitTopAndBottomRowPix();
+	p->InitBorderPix();
 
 	Game.SetInitProgress(80);
 
@@ -1918,18 +1898,19 @@ bool C4Landscape::ApplyDiff(C4Group &hGroup)
 {
 	std::unique_ptr<CSurface8> pDiff, pDiffBkg;
 	// Load diff landscape from group
-	if ((pDiff = GroupReadSurface8(hGroup, C4CFN_DiffLandscape)) == nullptr) return false;
-	if ((pDiffBkg = GroupReadSurface8(hGroup, C4CFN_DiffLandscapeBkg)) == nullptr) return false;
+	pDiff = GroupReadSurface8(hGroup, C4CFN_DiffLandscape);
+	pDiffBkg = GroupReadSurface8(hGroup, C4CFN_DiffLandscapeBkg);
+	if (pDiff == nullptr && pDiffBkg == nullptr) return false;
 
 	// convert all pixels: keep if same material; re-set if different material
 	BYTE byPix;
 	for (int32_t y = 0; y < GetHeight(); ++y) for (int32_t x = 0; x < GetWidth(); ++x)
 	{
-		if (pDiff->GetPix(x, y) != C4M_MaxTexIndex)
+		if (pDiff && pDiff->GetPix(x, y) != C4M_MaxTexIndex)
 			if (p->Surface8->_GetPix(x, y) != (byPix = pDiff->_GetPix(x, y)))
 				// material has changed here: readjust with new texture
 				p->Surface8->SetPix(x, y, byPix);
-		if (pDiffBkg->GetPix(x, y) != C4M_MaxTexIndex)
+		if (pDiffBkg && pDiffBkg->GetPix(x, y) != C4M_MaxTexIndex)
 			if (p->Surface8Bkg->_GetPix(x, y) != (byPix = pDiffBkg->_GetPix(x, y)))
 				p->Surface8Bkg->_SetPix(x, y, byPix);
 	}
@@ -2036,7 +2017,7 @@ bool C4Landscape::SaveTextures(C4Group &hGroup) const
 	return true;
 }
 
-bool C4Landscape::P::InitTopAndBottomRowPix()
+bool C4Landscape::P::InitBorderPix()
 {
 	assert(Width > 0);
 	// Init Top-/BottomRowPix array, which determines if out-of-landscape pixels on top/bottom side of the map are solid or not
@@ -2044,6 +2025,8 @@ bool C4Landscape::P::InitTopAndBottomRowPix()
 	if (!Width) return true;
 	TopRowPix.clear();
 	BottomRowPix.clear();
+	LeftColPix.clear();
+	RightColPix.clear();
 	// must access Game.C4S here because Landscape.TopOpen / Landscape.BottomOpen may not be initialized yet
 	// why is there a local copy of that static variable anyway?
 	int32_t top_open_flag = Game.C4S.Landscape.TopOpen;
@@ -2086,6 +2069,37 @@ bool C4Landscape::P::InitTopAndBottomRowPix()
 		// BottomOpen=1: Bottom is open
 	default: BottomRowPix.assign(Width, 0); break;
 	}
+
+	if (Game.C4S.Landscape.AutoScanSideOpen)
+	{
+		// Compatibility: check both foreground and background material per
+		// default, Top/BottomOpen=2-like behavior with AutoScanSideOpen=2.
+		bool only_bg = Game.C4S.Landscape.AutoScanSideOpen == 2;
+		LeftColPix.resize(Height);
+		RightColPix.resize(Height);
+		uint8_t map_pix;
+		for (int32_t y = 0; y < Height; ++y)
+		{
+			map_pix = MapBkg->GetPix(0, y / MapZoom);
+			if (!only_bg) map_pix += Map->GetPix(0, y / MapZoom);
+			LeftColPix[y] = ((map_pix != 0) ? MCVehic : 0);
+			map_pix = MapBkg->GetPix(Map->Wdt - 1, y / MapZoom);
+			if (!only_bg) map_pix += Map->GetPix(Map->Wdt - 1, y / MapZoom);
+			RightColPix[y] = ((map_pix != 0) ? MCVehic : 0);
+		}
+	}
+	else
+	{
+		int32_t LeftOpen = std::min(Height, Game.C4S.Landscape.LeftOpen);
+		int32_t RightOpen = std::min(Height, Game.C4S.Landscape.RightOpen);
+		LeftColPix.assign(Height, MCVehic);
+		RightColPix.assign(Height, MCVehic);
+		for (int32_t cy = 0; cy < LeftOpen; cy++)
+			LeftColPix[cy] = 0;
+		for (int32_t cy = 0; cy < RightOpen; cy++)
+			RightColPix[cy] = 0;
+	}
+
 	return true;
 }
 
@@ -3434,6 +3448,7 @@ bool C4Landscape::DrawBrush(int32_t iX, int32_t iY, int32_t iGrade, const char *
 		break;
 		// Exact: draw directly to landscape by color & pattern
 	case LandscapeMode::Exact:
+	{
 		C4Rect BoundingBox(iX - iGrade - 1, iY - iGrade - 1, iGrade * 2 + 2, iGrade * 2 + 2);
 		// Draw to landscape
 		p->PrepareChange(this, BoundingBox);
@@ -3441,6 +3456,8 @@ bool C4Landscape::DrawBrush(int32_t iX, int32_t iY, int32_t iGrade, const char *
 		p->Surface8Bkg->Circle(iX, iY, iGrade, byColBkg);
 		p->FinishChange(this, BoundingBox);
 		break;
+	}
+	case LandscapeMode::Undefined: assert(false); break;
 	}
 	return true;
 }
@@ -3504,6 +3521,7 @@ bool C4Landscape::DrawLine(int32_t iX1, int32_t iY1, int32_t iX2, int32_t iY2, i
 		break;
 		// Exact: draw directly to landscape by color & pattern
 	case LandscapeMode::Exact:
+	{
 		// Set texture pattern & get material color
 		C4Rect BoundingBox(iX1 - iGrade, iY1 - iGrade, iGrade * 2 + 1, iGrade * 2 + 1);
 		BoundingBox.Add(C4Rect(iX2 - iGrade, iY2 - iGrade, iGrade * 2 + 1, iGrade * 2 + 1));
@@ -3512,6 +3530,8 @@ bool C4Landscape::DrawLine(int32_t iX1, int32_t iY1, int32_t iX2, int32_t iY2, i
 		ForLine(iX1, iY1, iX2, iY2, [this, line_color, line_color_bkg, iGrade](int32_t x, int32_t y) { return p->DrawLineLandscape(x, y, iGrade, line_color, line_color_bkg); });
 		p->FinishChange(this, BoundingBox);
 		break;
+	}
+	case LandscapeMode::Undefined: assert(false); break;
 	}
 	return true;
 }
@@ -3551,6 +3571,7 @@ bool C4Landscape::DrawBox(int32_t iX1, int32_t iY1, int32_t iX2, int32_t iY2, in
 		break;
 		// Exact: draw directly to landscape by color & pattern
 	case LandscapeMode::Exact:
+	{
 		C4Rect BoundingBox(iX1, iY1, iX2 - iX1 + 1, iY2 - iY1 + 1);
 		// Draw to landscape
 		p->PrepareChange(this, BoundingBox);
@@ -3558,6 +3579,8 @@ bool C4Landscape::DrawBox(int32_t iX1, int32_t iY1, int32_t iX2, int32_t iY2, in
 		p->Surface8Bkg->Box(iX1, iY1, iX2, iY2, byColBkg);
 		p->FinishChange(this, BoundingBox);
 		break;
+	}
+	case LandscapeMode::Undefined: assert(false); break;
 	}
 	return true;
 }
@@ -3673,13 +3696,11 @@ BYTE C4Landscape::GetPix(int32_t x, int32_t y) const // get landscape pixel (bou
 	// Border checks
 	if (x < 0)
 	{
-		if (y < p->LeftOpen) return 0;
-		else return MCVehic;
+		return p->LeftColPix[y];
 	}
 	if (static_cast<uint32_t>(x) >= static_cast<uint32_t>(p->Width))
 	{
-		if (y < p->RightOpen) return 0;
-		else return MCVehic;
+		return p->RightColPix[y];
 	}
 	if (y < 0)
 	{
@@ -3735,13 +3756,11 @@ BYTE C4Landscape::GetBackPix(int32_t x, int32_t y) const // get landscape pixel 
 	// Border checks
 	if (x < 0)
 	{
-		if (y < p->LeftOpen) return 0;
-		else return Mat2PixColDefault(MTunnel);
+		return p->DefaultBkgMat(p->LeftColPix[Clamp(y, 0, GetHeight()-1)]);
 	}
 	if (static_cast<uint32_t>(x) >= static_cast<uint32_t>(GetWidth()))
 	{
-		if (y < p->RightOpen) return 0;
-		else return Mat2PixColDefault(MTunnel);
+		return p->DefaultBkgMat(p->RightColPix[Clamp(y, 0, GetHeight()-1)]);
 	}
 	if (y < 0)
 	{
@@ -4176,13 +4195,13 @@ C4FoW * C4Landscape::GetFoW()
 
 int32_t C4Landscape::GetMatCount(int material) const
 {
-	assert(material >= 0 && material < p->MatCount.size());
+	assert(material >= 0 && (unsigned) material < p->MatCount.size());
 	return p->MatCount[material];
 }
 
 int32_t C4Landscape::GetEffectiveMatCount(int material) const
 {
-	assert(material >= 0 && material < p->EffectiveMatCount.size());
+	assert(material >= 0 && (unsigned) material < p->EffectiveMatCount.size());
 	return p->EffectiveMatCount[material];
 }
 

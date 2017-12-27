@@ -7,22 +7,21 @@
 
 
 #include Library_Goal
+#include Library_SwitchTarget
 
 
 /*-- Control --*/
 
-public func OpenDoor(object switch)
+// Reaction to operation by a switch.
+public func OnSetInputSignal(object operator, object switch, bool right)
 {
-	// Don't do anything here.
-	return;
-}
-
-public func CloseDoor(object switch)
-{
-	if (!GetEffect("FxRunLocomotives", this) && !FindObject(Find_ID(Locomotive)))
+	if (!right)
+	{
+		if (!GetEffect("FxRunLocomotives", this) && !FindObject(Find_ID(Locomotive)))
 		CreateEffect(FxRunLocomotives, 100, 36, this);
-	switch->ControlSwitchDir(nil, -1);
-	return;
+		switch->ControlSwitchDir(nil, -1);
+	}
+	_inherited(operator, switch, right, ...);
 }
 
 local FxRunLocomotives = new Effect
@@ -81,7 +80,6 @@ local FxCheckLocomotive = new Effect
 	{
 		if (Target->GetX() > LandscapeWidth() - 14)
 		{
-			Log("train passed after: %d", time);
 			if (time <= this.time_allowed)
 				this.goal->DoPassed(1);
 			Target->RemoveObject();

@@ -204,7 +204,8 @@ private func InitLeftIsland()
 {
 	var switch = CreateObjectAbove(Switch, 20, LandscapeHeight() / 2);
 	var goal = FindObject(Find_ID(Goal_LocomotiveHighway));
-	switch->SetTarget(goal);
+	goal->SetPlrViewOnSignalChange(false);
+	switch->SetSwitchTarget(goal);
 	switch->SetSwitchDir(-1);
 	
 	var guidepost = CreateObjectAbove(EnvPack_Guidepost2, 40, LandscapeHeight() / 2);
@@ -249,6 +250,16 @@ private func InitMiddleIsland()
 	var guidepost = CreateObjectAbove(EnvPack_Guidepost2, LandscapeWidth() / 2 + 40, LandscapeHeight() / 2);
 	guidepost->SetInscription("$MsgResourcesWest$");
 	guidepost.MeshTransformation = EnvPack_Guidepost2.MeshTransformation;
+	
+	var diamond_cnt = 12;
+	for (var cnt = 0; cnt < diamond_cnt; cnt++)
+	{
+		var pos = FindLocation(Loc_Material("Gold"));
+		if (pos)
+		{
+			CreateObject(Diamond_Socket, pos.x, pos.y);
+		}
+	}
 	return;
 }
 

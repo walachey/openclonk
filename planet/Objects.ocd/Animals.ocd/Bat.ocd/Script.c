@@ -157,7 +157,8 @@ private func FxCoreBehaviorTimer(object target, proplist effect, int time)
 
 		if (Distance(GetX(), GetY(), effect.attack_target->GetX(), effect.attack_target->GetY()) < 10)
 		{
-			BitePrey(effect.attack_target);
+			if (!effect.attack_target->Contained())	
+				BitePrey(effect.attack_target);
 			effect.attack_target = nil;
 			SetRandomDirection();
 		}
@@ -518,7 +519,7 @@ local Description = "$Description$";
 
 local MaxEnergy = 20000;
 local MaxBreath = 180;
-local NoBurnDecay = 1;
+local NoBurnDecay = true;
 local ContactIncinerate = 10;
 local BorderBound = C4D_Border_Sides | C4D_Border_Top | C4D_Border_Bottom;
 local ContactCalls = true;
