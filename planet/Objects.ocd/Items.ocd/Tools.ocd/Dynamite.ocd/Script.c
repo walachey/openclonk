@@ -84,16 +84,6 @@ public func OnFuseFinished(object fuse)
 	DoExplode();
 }
 
-// This will only when inside a dynamite box to display the remaining dynamite sticks in the HUD
-public func GetStackCount()
-{
-	if (Contained())
-		if (Contained()->GetID() == DynamiteBox)
-		{
-			return Contained()->ContentsCount(GetID());
-		}
-}
-
 public func IsInfiniteStackCount()
 {
 	return false;

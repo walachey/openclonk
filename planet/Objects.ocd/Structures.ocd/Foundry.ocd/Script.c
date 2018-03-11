@@ -22,10 +22,28 @@ public func LampPosition(id def) { return [-11 * GetCalcDir(), 2]; }
 public func Construction(object creator)
 {
 	AddTimer("CollectionZone", 1);
+	SetAction("Default");
 	return _inherited(creator, ...);
 }
 
 public func IsHammerBuildable() { return true; }
+
+public func Initialize()
+{
+	// Update vertices to fit shape of flipped building after construction is finished.
+	// Vertices are being reset when the construction is finished (i.e. on shape updates).
+	if (GetDir() == DIR_Right)
+		FlipVertices();
+	return _inherited(...);
+}
+
+public func SetDir(int dir)
+{
+	// Update vertices to fit shape of flipped building when dir is changed.
+	if (GetDir() != dir)
+		FlipVertices();
+	return _inherited(dir, ...);
+}
 
 
 /*-- Production --*/
@@ -138,26 +156,26 @@ public func GetLiquidContainerMaxFillLevel(liquid_name)
 }
 
 // The foundry may have one drain and one source.
-public func QueryConnectPipe(object pipe)
+public func QueryConnectPipe(object pipe, bool do_msg)
 {
 	if (GetDrainPipe() && GetSourcePipe())
 	{
-		pipe->Report("$MsgHasPipes$");
+		if (do_msg) pipe->Report("$MsgHasPipes$");
 		return true;
 	}
 	else if (GetSourcePipe() && pipe->IsSourcePipe())
 	{
-		pipe->Report("$MsgSourcePipeProhibited$");
+		if (do_msg) pipe->Report("$MsgSourcePipeProhibited$");
 		return true;
 	}
 	else if (GetDrainPipe() && pipe->IsDrainPipe())
 	{
-		pipe->Report("$MsgDrainPipeProhibited$");
+		if (do_msg) pipe->Report("$MsgDrainPipeProhibited$");
 		return true;
 	}
 	else if (pipe->IsAirPipe())
 	{
-		pipe->Report("$MsgPipeProhibited$");
+		if (do_msg) pipe->Report("$MsgPipeProhibited$");
 		return true;
 	}
 	return false;
@@ -194,6 +212,20 @@ public func Definition(proplist def)
 	def.PictureTransformation = Trans_Mul(Trans_Translate(2000, 0, 7000), Trans_Rotate(-20, 1, 0, 0), Trans_Rotate(30, 0, 1, 0));
 	return _inherited(def, ...);
 }
+
+local ActMap = {
+		Default = {
+			Prototype = Action,
+			Name = "Default",
+			Procedure = DFA_NONE,
+			Directions = 2,
+			FlipDir = 1,
+			Length = 1,
+			Delay = 0,
+			FacetBase = 1,
+			NextAction = "Default",
+		},
+};
 
 local Name = "$Name$";
 local Description = "$Description$";

@@ -11,8 +11,10 @@
 	Secondary properties are:
 	 * Energy              - Alternative amount of hitpoints of the clonk.
 	 * Skin                - Alternative skin for the clonk.
+	 * Inventory           - Items for the clonk, either ID or list of IDs.
 	 * Vehicle             - Vehicle the enemy is controlling or riding.
 	 * VehicleHP           - Hitpoints for the enemy vehicle, can be made stronger.
+	 * VehicleInventory    - Items for the vehicle, either ID or list of IDs.
 	 * IsCrew              - Is part of a crew of the AI that is controlling the vehicle.
 	
 	This also defines standard waves which attack the player or its base. The wave is a list of properties, the main ones are:
@@ -92,9 +94,9 @@ private func LaunchEnemyAt(proplist prop_enemy, int wave_nr, int enemy_plr, prop
 	enemy.Bounty = prop_enemy.Bounty;
 	enemy.Score = prop_enemy.Score;
 	// Vehicles for enemies that are not a crew of a vehicle.
+	var vehicle;
 	if (prop_enemy.Vehicle && !prop_enemy.IsCrew)
 	{
-		var vehicle;
 		if (prop_enemy.Vehicle == Balloon)
 		{
 			var balloon = enemy->CreateContents(Balloon);
@@ -106,6 +108,16 @@ private func LaunchEnemyAt(proplist prop_enemy, int wave_nr, int enemy_plr, prop
 			enemy->SetAction("Ride", vehicle);
 			// Add boom attack to enemy list.
 			GameCallEx("OnEnemyCreation", vehicle, wave_nr);
+		}
+		else if (prop_enemy.Vehicle == Airplane)
+		{
+			vehicle = CreateObjectAbove(prop_enemy.Vehicle, x, y + 10, enemy_plr);
+			enemy->Enter(vehicle);
+			vehicle->PlaneMount(enemy);
+			// Assume the plane is at one landscape side and wants to fly to the opposite side.
+			if (vehicle->GetX() > LandscapeWidth() / 2)
+				vehicle->FaceLeft();
+			vehicle->StartInstantFlight(vehicle->GetR(), 15);
 		}
 		else
 		{
@@ -121,20 +133,36 @@ private func LaunchEnemyAt(proplist prop_enemy, int wave_nr, int enemy_plr, prop
 			GameCallEx("OnCreationRuleNoFF", vehicle);
 	}
 	// Move crew members onto their vehicles.
-	if (prop_enemy.IsCrew && prop_enemy.Vehicle)
+	if (prop_enemy.Vehicle && prop_enemy.IsCrew)
 	{
-		vehicle = enemy->FindObject(Find_Distance(50), Find_ID(prop_enemy.Vehicle), Sort_Distance());
-		if (vehicle)
+		var crew_vehicle = enemy->FindObject(Find_Distance(50), Find_ID(prop_enemy.Vehicle), Sort_Distance());
+		if (crew_vehicle)
 		{
-			enemy.commander = vehicle.pilot;		
+			// Set commander for crew.
+			enemy.commander = crew_vehicle.pilot;		
 		}	
 	}
-	// Enemy inventory
+	// Vehicle inventory.
+	if (vehicle && prop_enemy.VehicleInventory)
+	{
+		for (var inv in ForceToInventoryArray(prop_enemy.VehicleInventory))
+		{
+			var inv_obj = vehicle->CreateContents(inv);
+			// Infinite ammo.
+			if (inv_obj)
+				inv_obj->~SetInfiniteStackCount();
+		}
+	}
+	// Enemy inventory.
 	if (prop_enemy.Inventory)
 	{
-		for (var inv in ForceVal2Array(prop_enemy.Inventory))
+		for (var inv in ForceToInventoryArray(prop_enemy.Inventory))
 		{
-			var inv_obj = enemy->CreateContents(inv);
+			// Special way to pick up carry heavy objects instantly.
+			if (inv->~IsCarryHeavy() && (enemy->GetOCF() & OCF_CrewMember))
+				inv_obj = enemy->CreateCarryHeavyContents(inv);
+			else
+				inv_obj = enemy->CreateContents(inv);
 			// Infinite ammo.
 			if (inv_obj)
 				inv_obj->~SetInfiniteStackCount();
@@ -146,6 +174,9 @@ private func LaunchEnemyAt(proplist prop_enemy, int wave_nr, int enemy_plr, prop
 		DefenseAI->AddAI(enemy);
 		DefenseAI->SetMaxAggroDistance(enemy, LandscapeWidth());
 		DefenseAI->SetGuardRange(enemy, 0, 0, LandscapeWidth(), LandscapeHeight());
+		// Add vehicle to AI.
+		if (vehicle)
+			DefenseAI->SetVehicle(enemy, vehicle);
 	}
 	return enemy;
 }
@@ -189,11 +220,25 @@ private func UpdateEnemyPhysicals(object enemy, proplist prop_enemy)
 	return;
 }
 
-private func ForceVal2Array(/*any*/ v)
+private func ForceToInventoryArray(/*any*/ list)
 {
-	if (GetType(v) != C4V_Array)
-		return [v];
-	return v;
+	// Convert single ID to array.
+	if (GetType(list) != C4V_Array)
+		return [list];
+	// Check in array if entries of the form [ID, amount] appear and convert them.
+	for (var i = 0; i < GetLength(list); )
+	{
+		var element = list[i];
+		if (GetType(element) == C4V_Array)
+		{
+			for (var j = 0; j < element[1]; j++)
+				PushBack(list, element[0]);
+			RemoveArrayValue(list, element);
+			continue;
+		}
+		i++;
+	}
+	return list;
 }
 
 // Create an arrow which show the direction the enemy is coming from.
@@ -240,7 +285,7 @@ local DefaultEnemy =
 local Swordsman = new DefaultEnemy
 {
 	Name = "$EnemySwordsman$",
-	Inventory = Sword,
+	Inventory = [Sword, Helmet],
 	Energy = 30,
 	Bounty = 20,
 	Color=0xff0000ff
@@ -268,11 +313,11 @@ local Spearman = new DefaultEnemy
 	Skin = CSKIN_Steampunk
 };
 
-// A clonk with javelins.
+// A clonk with a grenade launcher.
 local Grenadier = new DefaultEnemy
 {
 	Name = "$EnemyGrenadier$",
-	Inventory = [GrenadeLauncher, IronBomb, IronBomb, IronBomb, IronBomb, IronBomb],
+	Inventory = [GrenadeLauncher, [IronBomb, 8]],
 	Energy = 25,
 	Bounty = 5,
 	Color = 0xffa0a0ff,
@@ -335,7 +380,7 @@ local Bomber = new DefaultEnemy
 local AirshipPilot = new DefaultEnemy
 {
 	Name = "$EnemyAirshipPilot$",
-	Inventory = [Rock, Rock, Rock, Rock, Rock],
+	Inventory = [[Rock, 5]],
 	Energy = 35,
 	Bounty = 15,
 	Color = 0xffff00ff,
@@ -355,6 +400,20 @@ local AirshipCrew = new DefaultEnemy
 	Skin = CSKIN_Farmer,
 	Vehicle = Airship,
 	IsCrew = true
+};
+
+// A pilot and a bomber plane.
+local BomberPlane = new DefaultEnemy
+{
+	Name = "$EnemyBomberPlane$",
+	Inventory = [],
+	Energy = 35,
+	Bounty = 20,
+	Color = 0xffaaddff,
+	Skin = CSKIN_Alchemist,
+	Vehicle = Airplane,
+	VehicleHP = 50,
+	VehicleInventory = [[IronBomb, 8], [Dynamite, 4]]
 };
 
 

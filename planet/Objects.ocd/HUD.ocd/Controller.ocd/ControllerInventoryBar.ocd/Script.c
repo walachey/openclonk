@@ -208,6 +208,7 @@ private func UpdateInventory()
 			// Hide or show extra-slot display?
 			var extra_slot_player = NO_OWNER;
 			var extra_symbol = nil;
+			var extra_symbol_stack_count = nil;
 			var contents = nil;
 			var extra_slot_background_symbol = nil;
 			if (has_extra_slot)
@@ -215,7 +216,16 @@ private func UpdateInventory()
 				// Show!
 				contents = item->Contents(0);
 				if (contents)
+				{
 					extra_symbol = contents;
+					// Stack count: either actual stack count or stacked object count.
+					extra_symbol_stack_count = contents->~GetStackCount();
+					if (extra_symbol_stack_count == nil)
+					{
+					    // Stack count fallback to actually stacked objects
+					    extra_symbol_stack_count = item->ContentsCount(contents->GetID());
+					}
+				}
 				extra_slot_player = GetOwner();
 				extra_slot_background_symbol = Icon_Menu_Circle;
 				// And attach tracker..
@@ -231,11 +241,11 @@ private func UpdateInventory()
 			}
 			// What to display in the extra slot?
 			var extra_text = nil, number_symbol = nil;
-			if (extra_symbol && contents->~GetStackCount())
+			if (extra_symbol && extra_symbol_stack_count)
 			{
-				if (contents->IsInfiniteStackCount())
+				if (contents->~IsInfiniteStackCount())
 					number_symbol = Icon_Number;
-				else extra_text = Format("%dx", contents->GetStackCount());
+				else extra_text = Format("%dx", extra_symbol_stack_count);
 			}
 			
 			// Close a possible lingering custom overlay for that slot.

@@ -244,8 +244,9 @@ public func GetRepairMaterials()
 	{
 		material_value += material.count * material.id->GetValue();
 	}
+	// Multiply by 1000 to prevent issues with rounding.
+	var remaining_damage_value = 1000 * total_component_value * GetDamage() / GetHitPoints() - 1000 * material_value;
 	
-	var remaining_damage_value = total_component_value * GetDamage() / GetHitPoints() - material_value;
 	if (remaining_damage_value <= 0)
 	{
 		return lib_structure.repair_materials;
@@ -259,6 +260,7 @@ public func GetRepairMaterials()
 		
 		var current_offset = 0;
 		var component, i = 0;
+		var found = false;
 		while (component = GetComponent(nil, i++))
 		{
 			var count = GetComponent(component);
@@ -268,11 +270,16 @@ public func GetRepairMaterials()
 			
 			if (random_sample <= current_offset)
 			{
-				remaining_damage_value -= value;
+				remaining_damage_value -= 1000 * value;
 				AddRepairMaterial(component);
+				found = true;
 				break;
 			}
 		}
+		
+		// Failsafe. No components?
+		if (!found)
+			break;
 	}
 	
 	return lib_structure.repair_materials;
@@ -446,8 +453,20 @@ public func OnRepairMenuHover(id symbol, string action, desc_menu_target, menu_i
 public func Flip()
 {
 	// Mirror structure
-	if (this->~NoConstructionFlip()) return false;
-	return SetDir(1-GetDir());
+	if (this->~NoConstructionFlip())
+		return false;
+	return SetDir(1 - GetDir());
+}
+
+private func FlipVertices()
+{
+	// Flips all vertices around the Y = 0 axis, this can be used to flip the vertices of asymmetric structures.
+	for (var cnt = 0; cnt < GetVertexNum(); cnt++)
+	{
+		SetVertex(cnt, VTX_X, -GetVertex(cnt, VTX_X));
+		SetVertex(cnt, VTX_Y, GetVertex(cnt, VTX_Y));
+	}
+	return;
 }
 
 

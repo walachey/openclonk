@@ -1098,16 +1098,30 @@ bool C4StartupNetDlg::DoOK()
 			  C4GUI::Ico_Error);
 			return true;
 		}
-		// no runtime join
-		if (!pRef->isJoinAllowed())
+		if (pRef->getGameStatus().isPastLobby())
 		{
-			if (!::pGUI->ShowMessageModal(
-			      LoadResStr("IDS_NET_NOJOIN_NORUNTIME"),
-			      strNoJoin.getData(),
-			      C4GUI::MessageDialog::btnYes | C4GUI::MessageDialog::btnNo,
-			      C4GUI::Ico_Error))
+			// no runtime join
+			if (!pRef->isJoinAllowed())
 			{
-				return true;
+				if (!::pGUI->ShowMessageModal(
+					  LoadResStr("IDS_NET_NOJOIN_NORUNTIME"),
+					  strNoJoin.getData(),
+					  C4GUI::MessageDialog::btnYes | C4GUI::MessageDialog::btnNo,
+					  C4GUI::Ico_Error))
+				{
+					return true;
+				}
+			}
+			else
+			{
+				if (!::pGUI->ShowMessageModal(
+					  LoadResStr("IDS_NET_NOJOIN_RUNTIMEBROKEN"),
+					  strNoJoin.getData(),
+					  C4GUI::MessageDialog::btnYes | C4GUI::MessageDialog::btnNo,
+					  C4GUI::Ico_Error))
+				{
+					return true;
+				}
 			}
 		}
 	}
@@ -1120,7 +1134,7 @@ bool C4StartupNetDlg::DoOK()
 		// (QProcessEnvironment? But then there's a Qt dependency in the network init code))
 		StdStrBuf tmpfn(Config.AtTempPath("ocjoin"), true);
 		MakeTempFilename(&tmpfn);
-		StdBuf join_data = DecompileToBuf<StdCompilerBinWrite>(*pRef);
+		StdStrBuf join_data = DecompileToBuf<StdCompilerINIWrite>(mkNamingAdapt(*pRef, "Reference"));
 		if (join_data.getSize())
 		{
 			if (join_data.SaveToFile(tmpfn.getData()))

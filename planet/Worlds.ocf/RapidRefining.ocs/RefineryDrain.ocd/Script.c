@@ -22,23 +22,42 @@ public func IsLiquidContainerForMaterial(string liquid)
 	return WildcardMatch("Oil", liquid);
 }
 
-public func QueryConnectPipe(object pipe)
+public func QueryConnectPipe(object pipe, bool do_msg)
 {
 	if (pipe->IsDrainPipe() || pipe->IsNeutralPipe())
 	{
-		return false;
+		// Also check if already connected to this refinery drain.
+		var line = pipe->GetConnectedLine();
+		if (!line)
+			return false;		
+		if (!line->IsConnectedTo(this, true))
+			return false;
 	}
-	else
-	{
+	if (do_msg)
 		pipe->Report("$MsgPipeProhibited$");
-		return true;
-	}
+	return true;
 }
 
 public func OnPipeConnect(object pipe, string specific_pipe_state)
 {
-	SetNeutralPipe(pipe);
+	SetDrainPipe(pipe);
+	pipe->SetDrainPipe();
 	pipe->Report("$MsgConnectedPipe$");
+}
+
+public func OnPipeDisconnect(object pipe)
+{
+	var result = inherited(pipe, ...);
+	// There may be still drain pipes connected, selected one as the current drain pipe.
+	for (var line in FindObjects(Find_Func("IsConnectedTo", this)))
+	{
+		var new_pipe = line->GetPipeKit();
+		if (new_pipe == pipe || !new_pipe->IsDrainPipe())
+			continue;
+		SetDrainPipe(new_pipe);
+		break;
+	}
+	return result;
 }
 
 

@@ -23,6 +23,7 @@
 #include "graphics/C4Draw.h"
 #include "graphics/C4GraphicsResource.h"
 #include "gui/C4MouseControl.h"
+#include "gui/C4KeyboardInput.h"
 #include "gui/C4StartupMainDlg.h"
 #include "network/C4Network2.h"
 #include "platform/C4GamePadCon.h"
@@ -147,7 +148,25 @@ C4StartupOptionsDlg::KeySelDialog::KeySelDialog(const C4PlayerControlAssignment 
 	: C4GUI::MessageDialog(GetDlgMessage(assignment, assignment_set).getData(), LoadResStr("IDS_MSG_DEFINEKEY"), C4GUI::MessageDialog::btnAbort | C4GUI::MessageDialog::btnReset, GetDlgIcon(assignment_set), C4GUI::MessageDialog::dsRegular),
 		key(KEY_Undefined), assignment(assignment), assignment_set(assignment_set)
 {
-	pKeyListener = new C4KeyBinding(C4KeyCodeEx(KEY_Any, KEYS_None), "DefineKey", KEYSCOPE_Gui, new C4GUI::DlgKeyCBPassKey<C4StartupOptionsDlg::KeySelDialog>(*this, &C4StartupOptionsDlg::KeySelDialog::KeyDown), C4CustomKey::PRIO_PlrControl);
+	const uint32_t KEYS_Allmod = KEYS_Shift | KEYS_Control | KEYS_Alt;
+	C4CustomKey::CodeList keys;
+	static_assert(KEYS_None == 0, "");
+	for (uint32_t k = KEYS_None; k <= KEYS_Allmod; k++) {
+		if (~KEYS_Allmod & k) // There is some efficient bit-twiddling (k = KEYS_Allmod & (k - KEYS_Allmod) instead of k++), but I figure that's overkill. (Relies on (defined) unsigned overflow)
+			continue;
+		keys.emplace_back(KEY_Any, k);
+	}
+	KeyListeners = std::make_unique<C4KeyBinding>(
+		keys,
+		"DefineKey",
+		KEYSCOPE_Gui,
+		new C4GUI::DlgKeyCBPassKey<C4StartupOptionsDlg::KeySelDialog>(
+			*this,
+			&C4StartupOptionsDlg::KeySelDialog::KeyDown,
+			&C4StartupOptionsDlg::KeySelDialog::KeyUp
+		),
+		C4CustomKey::PRIO_PlrControl
+	);
 }
 
 StdStrBuf C4StartupOptionsDlg::KeySelDialog::GetDlgMessage(const C4PlayerControlAssignment *assignment, const C4PlayerControlAssignmentSet *assignment_set)
@@ -176,14 +195,34 @@ C4GUI::Icons C4StartupOptionsDlg::KeySelDialog::GetDlgIcon(const C4PlayerControl
 	return C4GUI::Ico_Keyboard;
 }
 
-
-
-C4StartupOptionsDlg::KeySelDialog::~KeySelDialog()
+void C4StartupOptionsDlg::KeySelDialog::MouseInput(C4GUI::CMouse& rMouse, int32_t iButton, int32_t iX, int32_t iY, DWORD dwKeyParam)
 {
-	delete pKeyListener;
+	// Original action
+	C4GUI::MessageDialog::MouseInput(rMouse, iButton, iX, iY, dwKeyParam);
+
+	// Find out to where the input was made (code duplication with C4GUI::Window::MouseInput)
+	// get client pos
+	C4Rect &rcClientRect = GetClientRect(), &rcBounds = GetBounds();
+	iX -= rcClientRect.x - rcBounds.x; iY -= rcClientRect.y - rcBounds.y;
+	// forward to topmost child element
+	for (Element *pChild = pLast; pChild; pChild = pChild->GetPrev())
+		if (pChild->fVisible && pChild->GetBounds().Contains(iX, iY))
+		{
+			if (dynamic_cast<C4GUI::Label*>(pChild))
+				break;
+			else
+				return;
+		}
+	// Only process the input event if the user certainly didn't click a button or anything...
+
+	if (iButton == C4MC_Button_None) // mouse got moved
+		return;
+	bool down;
+	auto key = C4KeyCodeEx::FromC4MC(0 /* FIXME: more mice! */, iButton, dwKeyParam, &down);
+	KeyPress(key, down);
 }
 
-bool C4StartupOptionsDlg::KeySelDialog::KeyDown(const C4KeyCodeEx &key)
+bool C4StartupOptionsDlg::KeySelDialog::KeyPress(const C4KeyCodeEx &key, bool fDown)
 {
 	// safety
 	if (!assignment || !assignment_set) return false;
@@ -200,6 +239,10 @@ bool C4StartupOptionsDlg::KeySelDialog::KeyDown(const C4KeyCodeEx &key)
 	{
 		if (!assignment_set->HasKeyboard()) return false;
 	}
+	// FIXME: There doesn't seem to be any kind of KEY_IsModifier function…
+	if ((KEY_IsModifier(key.Key) &&  fDown) ||
+	   (!KEY_IsModifier(key.Key) && !fDown))
+		return false;
 	// okay, use it
 	this->key=key;
 	Close(true);

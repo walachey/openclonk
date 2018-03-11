@@ -15,6 +15,7 @@ func Initialize()
 		{key = "wins", title = "Wins", sorted = true, desc = true, default = 0, priority = 100},
 		{key = "death", title = "", sorted = false, default = "", priority = 0},
 	]);
+
 }
 
 // Resets the scenario, redrawing the map.
@@ -106,6 +107,10 @@ func InitializeRound()
 
 	// The game starts after a delay to ensure that everyone is ready.
 	GUI_Clock->CreateCountdown(3);
+
+	SetSky(g_theme.Sky);
+	g_theme->InitializeRound();
+	g_theme->InitializeMusic();
 
 	return true;
 }
@@ -461,3 +466,79 @@ func IsFirestoneSpot(int x, int y)
 // Very thorough ice surrounding check so they don't explode right away or when the first layer of ice melts
 	return GBackSolid(x,y-1) && GBackSolid(x,y+4) && GBackSolid(x-2,y) && GBackSolid(x+2,y);
 }
+
+// ============= Themes =============
+static const DefaultTheme = new Global
+{
+	InitializeRound = func() { },
+	LavaMat = "^DuroLava",
+	IceMats = ["^Ice-ice", "^Ice-ice2"],
+	AltMatRatio = 50,
+	BackgroundMat = nil,
+	Sky = "Default",
+	PlayList = nil,
+	InitializeMusic = func()
+	{
+		// No special play list => music by Ambience
+		if (this.PlayList == nil)
+			InitializeAmbience();
+		else
+		{
+			// Remove Ambience to avoid interference.
+			RemoveAll(Find_ID(Ambience));
+			SetPlayList(this.PlayList, NO_OWNER, true);
+			SetGlobalSoundModifier(nil);
+		}
+	}
+};
+
+static const HotIce = new DefaultTheme
+{
+	InitializeRound = func() 
+	{
+		Stalactite->Place(10 + Random(3));
+	}
+};
+
+static const EciToh = new DefaultTheme
+{
+	LavaMat = "DuroLava",
+	IceMats = ["Coal", "Rock-rock"],
+	AltMatRatio = 8,
+	BackgroundMat = "Tunnel",
+	InitializeRound = func() 
+	{
+		Stalactite->Place(10 + Random(3));
+	}
+};
+
+static const MiamiIce = new DefaultTheme
+{
+	IceMats = ["^BlackIce-black", "^BlackIce-black"],
+	Sky = "SkyMiami",
+	PlayList =
+	{
+		PlayList = "beach",
+		MusicBreakChance = 0,
+	},
+
+	InitializeRound = func()
+	{
+		// Colors
+		Scenario->CreateEffect(MiamiObjects, 1, 1);
+
+		Tree_Coconut->Place(RandomX(7, 13));
+	},
+
+	MiamiObjects = new Effect {
+		Timer = func(int time)
+		{
+			for (var o in FindObjects(Find_NoContainer()))
+			{
+				if (o->GetID() == Tree_Coconut)
+					continue;
+				o->SetClrModulation(HSL(time, 255, 100));
+			}
+		},
+	}
+};

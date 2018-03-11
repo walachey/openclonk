@@ -55,6 +55,7 @@ public func Construction()
 }
 
 public func IsHammerBuildable() { return true; }
+public func NoConstructionFlip() { return true; }
 
 public func Initialize()
 {
@@ -179,29 +180,93 @@ private func SetInfoMessage(string msg)
 	UpdateInteractionMenus(this.GetPumpControlMenuEntries);
 }
 
+static const LIBRARY_TANK_Menu_Action_Cut_AirPipe = "cutairpipe";
+static const LIBRARY_TANK_Menu_Action_Add_AirPipe = "addairpipe";
+
+// Extend liquid tank connection interface to air pipes.
+public func GetPipeControlMenuEntries(object clonk)
+{
+	var menu_entries = inherited(clonk, ...);
+	
+	var drain_pipe = GetDrainPipe();
+	// Modify cut drain pipe menu entry for air pipe.
+	if (drain_pipe && !drain_pipe->QueryCutLineConnection(this) && drain_pipe->IsAirPipe())
+	{
+		for (var entry in menu_entries)
+		{
+			if (entry.extra_data == LIBRARY_TANK_Menu_Action_Cut_Drain)
+			{
+				entry.extra_data = LIBRARY_TANK_Menu_Action_Cut_AirPipe;
+				entry.Priority = 4;
+				entry.custom.image.BackgroundColor = RGB(0, 153, 255);
+				entry.custom.text.Text = GetConnectedPipeMessage("$MsgCutAirPipe$", GetDrainPipe());
+				break;
+			}
+		}
+	}
+	
+	// Add attach air pipe menu entry.
+	var air_pipe = FindAvailablePipe(clonk, Find_Func("IsAirPipe"));
+	if (!drain_pipe && air_pipe)
+		PushBack(menu_entries, GetTankMenuEntry(air_pipe, GetConnectedPipeMessage("$MsgConnectAirPipe$", air_pipe), 4, LIBRARY_TANK_Menu_Action_Add_AirPipe, RGB(0, 153, 255)));
+	return menu_entries;
+}
+
+public func OnPipeControlHover(symbol_or_object, string action, desc_menu_target, menu_id)
+{
+	if (action == LIBRARY_TANK_Menu_Action_Cut_AirPipe)
+	{
+		GuiUpdateText(GetConnectedPipeDescription("$DescCutAirPipe$", GetDrainPipe()), menu_id, 1, desc_menu_target);
+		return;
+	}
+	if (action == LIBRARY_TANK_Menu_Action_Add_AirPipe)
+	{
+		GuiUpdateText(GetConnectedPipeDescription("$DescConnectAirPipe$", symbol_or_object), menu_id, 1, desc_menu_target);
+		return;
+	}
+	return inherited(symbol_or_object, action, desc_menu_target, menu_id, ...);
+}
+
+public func OnPipeControl(symbol_or_object, string action, bool alt)
+{
+	if (action == LIBRARY_TANK_Menu_Action_Cut_AirPipe)
+	{
+		this->DoCutPipe(GetDrainPipe());
+		UpdateInteractionMenus(this.GetPipeControlMenuEntries);
+		return;
+	}
+	if (action == LIBRARY_TANK_Menu_Action_Add_AirPipe)
+	{
+		this->DoConnectPipe(symbol_or_object, PIPE_STATE_Air);
+		UpdateInteractionMenus(this.GetPipeControlMenuEntries);
+		return;
+	}
+	return inherited(symbol_or_object, action, alt, ...);
+}
+
 
 /*-- Pipe control --*/
 
-public func QueryConnectPipe(object pipe)
+public func QueryConnectPipe(object pipe, bool do_msg)
 {
 	if (GetDrainPipe() && GetSourcePipe())
 	{
-		pipe->Report("$MsgHasPipes$");
+		if (do_msg) pipe->Report("$MsgHasPipes$");
 		return true;
 	}
 	else if (pipe->IsSourcePipe() && GetSourcePipe())
 	{
-		pipe->Report("$MsgSourcePipeProhibited$");
+		if (do_msg) pipe->Report("$MsgSourcePipeProhibited$");
 		return true;
 	}
 	else if (pipe->IsDrainPipe() && GetDrainPipe())
 	{
-		pipe->Report("$MsgDrainPipeProhibited$");
+		if (do_msg) pipe->Report("$MsgDrainPipeProhibited$");
 		return true;
 	}
 	else if (pipe->IsAirPipe() && GetDrainPipe())
 	{
-		pipe->Report("$MsgAirPipeProhibited$");
+		if (do_msg) pipe->Report("$MsgAirPipeProhibited$");
 		return true;
 	}
 	return false;
@@ -254,10 +319,8 @@ public func OnPipeConnect(object pipe, string specific_pipe_state)
 public func OnPipeDisconnect(object pipe)
 {
 	_inherited(pipe, ...);
-
-	if (!pipe->IsAirPipe())
-		pipe->SetNeutralPipe();
-	else // Stop pumping to prevent errors from Pumping()
+	// Stop pumping to prevent errors from Pumping() function.
+	if (pipe->IsAirPipe())
 		CheckState();
 }
 

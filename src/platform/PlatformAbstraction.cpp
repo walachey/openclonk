@@ -105,11 +105,15 @@ bool RestartApplication(std::vector<const char *> parameters)
 	case -1: break; // error message shown below
 	case 0:
 	{
-		std::vector<const char*> params = {"openclonk"};
+		std::vector<const char*> params = {Application.argv0};
 		params.insert(params.end(), parameters.begin(), parameters.end());
 		params.push_back(nullptr);
-		execv("/proc/self/exe", const_cast<char *const *>(params.data()));
-		perror("editor launch failed");
+#ifdef PROC_SELF_EXE
+		execv(PROC_SELF_EXE, const_cast<char *const *>(params.data()));
+		perror("editor launch via " PROC_SELF_EXE " failed");
+#endif
+		execvp(Application.argv0, const_cast<char *const *>(params.data()));
+		perror("editor launch via argv[0] failed");
 		exit(1);
 	}
 	default:

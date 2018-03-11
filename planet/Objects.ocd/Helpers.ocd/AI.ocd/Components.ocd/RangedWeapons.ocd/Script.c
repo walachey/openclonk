@@ -34,7 +34,7 @@ private func ExecuteRanged(effect fx)
 	// Look at target.
 	this->ExecuteLookAtTarget(fx);
 	// Make sure we can shoot.
-	if (!this->IsAimingOrLoading(fx) || !fx.aim_weapon)
+	if (!this->IsAimingOrLoading(fx) || !fx.aim_weapon || !fx.aim_weapon->~IsRangedWeapon())
 	{
 		this->CancelAiming(fx);
 		if (!this->CheckHandsAction(fx)) return true;
@@ -52,8 +52,13 @@ private func ExecuteRanged(effect fx)
 	if (GetEffect("IntAimCheckProcedure", fx.Target) && !fx.Target->ReadyToAction()) 
 		return this->ExecuteStand(fx);
 	// Calculate offset to target. Take movement into account.
-	// Also aim for the head (y-4) so it's harder to evade by jumping.
-	var x = fx.Target->GetX(), y = fx.Target->GetY(), tx = fx.target->GetX(), ty = fx.target->GetY() - 4;
+	var x = fx.Target->GetX(), y = fx.Target->GetY(), tx = fx.target->GetX(), ty = fx.target->GetY();
+	// Aim for the head of crew members (y-4) so it's harder to evade by jumping.
+	if (fx.target->GetOCF() & OCF_CrewMember)
+		ty = ty - 4;
+	// Aim just above the base of structures, this makes the changes higher for explosives to detonate on the basement or solid material.
+	if (fx.target->GetCategory() & C4D_Structure)
+		ty = ty + fx.target->GetBottom() - 2;
 	var d = Distance(x, y, tx, ty);
 	// Projected travel time of the arrow.
 	var dt = d * 10 / fx.projectile_speed; 
@@ -85,7 +90,7 @@ private func ExecuteRanged(effect fx)
 		if (ally)
 		{
 			// Try to jump, if not possible just wait.
-			if (this->ExecuteJump()) 
+			if (this->ExecuteJump(fx)) 
 				return true;
 		}
 		else
@@ -105,8 +110,10 @@ private func ExecuteRanged(effect fx)
 			return true;
 		}
 	}
-	// Path not free or out of range. Just wait for enemy to come...
+	// Path not free or out of range. Just wait for enemy to come or move to it if in agressive mode.
 	fx.aim_weapon->ControlUseHolding(fx.Target, tx - x, ty - y);
+	if (fx.is_aggressive && d > 40)
+		fx.Target->SetCommand("MoveTo", nil, fx.target->GetX(), fx.target->GetY());
 	// Might also change target if current is unreachable.
 	var new_target;
 	if (!Random(3))

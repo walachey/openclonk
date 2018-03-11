@@ -3,7 +3,14 @@
 	The players cooperate to defend a base against an enemy for a many attack waves as possible.
 	
 	Include the Teams.txt in this object in your defense scenario. Also include a ParameterDefs.txt
-	if you want to have achievements. See Defense.ocf for an example of the file to add.
+	if you want to have achievements. See Defense.ocf for an example of the file to add. Relaunching
+	must be handled by script, for example the relaunch rule, and RelaunchPlayer must not be called,
+	i.e. use OnClonkDeath. The goal can be further controlled by scenario script using the following
+	callbacks:
+	 * GetAttackWave(int wave_nr): to specify the enemies of this wave.
+	 * GetWaveToAchievement(): to specify the amount of waves needed for bronze, silver and gold stars.
+	 * OnWaveStarted(int wave_nr): when a wave has started.
+	 * OnWaveCompleted(int wave_nr): when a wave has been completed (i.e. all enemies are eliminated).
 	
 	@author Maikel
 */
@@ -21,7 +28,7 @@ local shared_wealth_remainder;
 local observer_container;
 local plrs_active;
 local plrs_bonus;
-local plrs_score;
+local plrs_kills;
 
 
 public func Construction()
@@ -39,11 +46,12 @@ public func Construction()
 	// Init player tracking.
 	plrs_active = [];
 	plrs_bonus = [];
-	plrs_score = [];
+	plrs_kills = [];
 	// Initialize scoreboard.
 	Scoreboard->SetTitle(Format("$MsgScoreboard$", GetScore()));
 	Scoreboard->Init([
-		{key = "bonus", title = Icon_Wealth, sorted = true, desc = true, default = "0", priority = 100}
+		{key = "bonus", title = Icon_Wealth, sorted = true, desc = true, default = "0", priority = 100},
+		{key = "kills", title = Scoreboard_Kill, sorted = true, desc = true, default = "0", priority = 50}
 	]);
 	// Create the enemy script player, the script player should be in the attackers team (id = 2).
 	CreateScriptPlayer("$PlayerAttackers$", nil, 2, CSPF_NoEliminationCheck | CSPF_NoScenarioInit | CSPF_NoScenarioSave, GetID());
@@ -65,7 +73,9 @@ public func InitializePlayer(int plr)
 	// Initialize scoreboard.
 	Scoreboard->NewPlayerEntry(plr);
 	plrs_bonus[plrid] = 0;
+	plrs_kills[plrid] = 0;
 	Scoreboard->SetPlayerData(plr, "bonus", plrs_bonus[plrid]);
+	Scoreboard->SetPlayerData(plr, "kills", plrs_kills[plrid]);
 	return;
 }
 
@@ -86,16 +96,30 @@ public func InitializeScriptPlayer(int plr)
 
 public func RelaunchPlayer(int plr)
 {
+	// The player has not been relaunched by external scripts and is eliminated.
+	// Move the player into the observer container and let the player spectate.
 	if (GetPlayerType(plr) == C4PT_User)
 	{
-		var crew = CreateObject(Clonk);
+		var crew = CreateObject(Clonk, 0, 0, plr);
 		crew->MakeCrewMember(plr);
 		SetCursor(plr, crew);
 		crew->Enter(observer_container);
 		RemoveArrayValue(plrs_active, GetPlayerID(plr));
 		if (GetLength(plrs_active) == 0)
-			EndRound();
+			return EndRound();
+		// Update the view of the observing players.
+		UpdateOberserverContainer();
 	}
+	return;
+}
+
+public func RemovePlayer(int plr)
+{
+	// Check completion if a player is removed, the player could have been the last active one.
+	if (GetPlayerType(plr) == C4PT_User)
+		if (RemoveArrayValue(plrs_active, GetPlayerID(plr)))
+			if (GetLength(plrs_active) == 0)
+				return EndRound();
 	return;
 }
 
@@ -116,7 +140,52 @@ public func EndRound()
 	return;
 }
 
+public func UpdateOberserverContainer()
+{
+	// Get a possible view cursor.
+	var view_cursor;
+	if (GetLength(plrs_active) > 0)
+	{
+		var active_plr = GetPlayerByID(plrs_active[0]);
+		view_cursor = GetCursor(active_plr);
+	}
+	if (view_cursor)
+	{
+		view_cursor->CreateEffect(FxTrackObservation, 100, 0, this);
+		// Set view for existing observers.
+		for (var observer in FindObjects(Find_OCF(OCF_CrewMember), Find_Container(observer_container)))
+		{
+			var observer_plr = observer->GetOwner();
+			SetPlrView(observer_plr, view_cursor);
+		}
+	}
+	return;
+}
+
+local FxTrackObservation = new Effect
+{
+	Construction = func(object goal)
+	{
+		this.goal = goal;	
+	},	
+	Destruction = func(int reason)
+	{
+		if (reason == FX_Call_RemoveClear || reason == FX_Call_RemoveDeath)
+			this.goal->UpdateOberserverContainer();
+	}
+};
+
 public func IsFulfilled() { return is_fulfilled; }
+
+// Can be called by a scenario if some other survival condition has failed.
+// For example if some object that needed to be defended has been destroyed.
+public func NotifyFailedSurvival()
+{
+	// Relaunch all players so that the goal is correctly fulfilled.
+	for (var plr in GetPlayers(C4PT_User))
+		RelaunchPlayer(plr);	
+	return;
+}
 
 
 /*-- Score --*/
@@ -157,6 +226,29 @@ private func GetBestScore(int plr)
 }
 
 private func GetScoreString() { return Format("Defense_%s_BestScore", GetScenTitle()); }
+
+private func UpdateBestWave(int new_best_wave)
+{
+	// Update the best wave for all players.
+	for (var plr in GetPlayers(C4PT_User))
+		SetBestWave(plr, new_best_wave);
+	return;
+}
+
+private func SetBestWave(int plr, int new_best_wave)
+{
+	// Only set if it increases the player's best wave.
+	if (new_best_wave > GetBestWave(plr))
+		SetPlrExtraData(plr, GetWaveString(), new_best_wave);
+	return;
+}
+
+private func GetBestWave(int plr)
+{
+	return GetPlrExtraData(plr, GetWaveString());
+}
+
+private func GetWaveString() { return Format("Defense_%s_BestWave", GetScenTitle()); }
 
 
 /*-- Wave Control --*/
@@ -199,11 +291,19 @@ local FxWaveControl = new Effect
 			Target->CreateEffect(Target.FxTrackWave, 100, nil, this.wave_nr, this.wave);
 			// Reset passed time and increase wave number for next wave.
 			this.time_passed = 0;
+			// Do a game call for scenario specific scripts.
+			GameCall("OnWaveStarted", this.wave_nr);
 		}	
 		// Increase the time passed in this wave and decrease the pause time.
 		this.time_passed++;
 		this.pause_time--;
 		return FX_OK;
+	},
+	
+	Destruction = func()
+	{
+		// Remove clock, since not needed any more.
+		GUI_Clock->RemoveCountdown();
 	},
 	
 	OnWaveCompleted = func(int wave_nr)
@@ -219,6 +319,8 @@ local FxWaveControl = new Effect
 				GUI_Clock->CreateCountdown(rtime);
 			}
 		}
+		// Do a game call for scenario specific scripts.
+		GameCall("OnWaveCompleted", this.wave_nr);
 		return;
 	},
 	
@@ -263,7 +365,22 @@ public func SetRecoveryTime(int to_time)
 	return;
 }
 
-public func GetRecoveryTime() { return recovery_time; } 
+public func GetRecoveryTime() { return recovery_time; }
+
+public func GetEnemyPlayer(int plr)
+{
+	// Forward to defense goal object.
+	if (this == Goal_Defense)
+	{
+		var goal = FindObject(Find_ID(Goal_Defense));
+		if (goal)
+			return goal->GetEnemyPlayer(plr);
+		return;
+	}
+	if (fx_wave_control)
+		return fx_wave_control->GetEnemy();
+	return;
+}
 
 
 /*-- Wave Tracking --*/
@@ -322,6 +439,7 @@ public func OnWaveCompleted(int wave_nr)
 	// Increase number of completed waves and update achievements.
 	completed_waves++;
 	CheckAchievement();
+	UpdateBestWave(completed_waves);
 	// Let wave control effect know a wave has been completed.
 	if (fx_wave_control)
 		fx_wave_control->OnWaveCompleted(wave_nr);
@@ -345,7 +463,9 @@ public func OnClonkDeath(object clonk, int killed_by)
 		{
 			DoWealth(killed_by, clonk.Bounty);
 			plrs_bonus[plrid] += clonk.Bounty;
+			plrs_kills[plrid] += 1;
 			Scoreboard->SetPlayerData(killed_by, "bonus", plrs_bonus[plrid]);
+			Scoreboard->SetPlayerData(killed_by, "kills", plrs_kills[plrid]);			
 		}
 		else
 		{		
@@ -393,19 +513,25 @@ public func CheckAchievement()
 	// Give the players their achievement.
 	if (achievement > 0)
 		GainScenarioAchievement("Done", achievement);
-	return false;
+	return;
+}
+
+public func GetWaveToAchievement()
+{
+	// Get the number of waves needed for achieving stars.
+	var achievement_data = GameCall("GetWaveToAchievement");
+	// By default the stars are awarded for 5, 10 and 25 completed waves.
+	if (!achievement_data || GetLength(achievement_data) != 3)
+		achievement_data = [5, 10, 25];
+	SortArray(achievement_data);	
+	return achievement_data;
 }
 
 public func ConvertWaveToAchievement(int wave_nr)
 {
-	// Get the number of waves needed for achieving stars.
-	var data = GameCall("GetWaveToAchievement");
-	// By default the stars are awarded for 5, 10 and 25 completed waves.
-	if (!data)
-		data = [5, 10, 25];
-	SortArray(data);
-	for (var index = GetLength(data); index >= 1; index--)
-		if (wave_nr >= data[index - 1])
+	var achievement_data = GetWaveToAchievement();
+	for (var index = GetLength(achievement_data); index >= 1; index--)
+		if (wave_nr >= achievement_data[index - 1])
 			return index;
 	return 0;
 }
@@ -457,9 +583,13 @@ public func GetDescription(int plr)
 					wave_msg = Format("%s%dx %s\n", wave_msg, enemy.Amount, enemy.Name);		
 		}
 	}
-	// Add score.
+	// Add wave and score.
+	wave_msg = Format("%s\n%s", wave_msg, Format("$MsgFinishedWave$", completed_waves, GetBestWave(plr)));
 	wave_msg = Format("%s\n%s", wave_msg, Format("$MsgCurrentScore$", GetScore(), GetBestScore(plr)));
-	return Format("%s\n\n%s", "$Description$", wave_msg);
+	// Get basic description and achievement information.
+	var achievement_data = GetWaveToAchievement();
+	var desc_msg = Format("$Description$", achievement_data[0], achievement_data[1], achievement_data[2]);
+	return Format("%s\n\n%s", desc_msg, wave_msg);
 }
 
 

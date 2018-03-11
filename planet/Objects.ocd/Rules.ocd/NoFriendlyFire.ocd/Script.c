@@ -1,6 +1,6 @@
 /**
 	No Friendly Fire Rule
-	If this rule is activate non-hostile crew members can't hit each other.
+	If this rule is active non-hostile crew members can't hit each other.
 	Some of the implementation is in appendto scripts.
 	
 	@author Maikel
@@ -161,9 +161,9 @@ public func NoFF_IsProjectileTarget(object projectile, object shooter, ...)
 
 /*-- Description --*/
 
-public func Activate(int plr)
+public func Activate(int by_plr)
 {
-	MessageWindow(this.Description, plr);
+	MessageWindow(this.Description, by_plr);
 	return true;
 }
 

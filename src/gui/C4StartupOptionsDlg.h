@@ -156,7 +156,7 @@ private:
 	class KeySelDialog : public C4GUI::MessageDialog
 	{
 	private:
-		class C4KeyBinding *pKeyListener;
+		std::unique_ptr<C4KeyBinding> KeyListeners;
 		C4KeyCodeEx key;
 		const class C4PlayerControlAssignment *assignment;
 		const class C4PlayerControlAssignmentSet *assignment_set;
@@ -165,10 +165,13 @@ private:
 		static C4GUI::Icons GetDlgIcon(const class C4PlayerControlAssignmentSet *assignment_set);
 
 	protected:
-		bool KeyDown(const C4KeyCodeEx &key);
+		bool KeyDown(const C4KeyCodeEx &key) { return KeyPress(key, true); };
+		bool KeyUp(const C4KeyCodeEx &key) { return KeyPress(key, false); };
+		bool KeyPress(const C4KeyCodeEx &key, bool fDown);
+		void MouseInput(C4GUI::CMouse &rMouse, int32_t iButton, int32_t iX, int32_t iY, DWORD dwKeyParam) override;
 	public:
 		KeySelDialog(const class C4PlayerControlAssignment *assignment, const class C4PlayerControlAssignmentSet *assignment_set);
-		~KeySelDialog() override;
+		~KeySelDialog() override = default;
 
 		C4KeyCodeEx GetKeyCode() { return key; }
 

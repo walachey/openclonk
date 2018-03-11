@@ -10,6 +10,16 @@ local lib_carryheavy_obj; // object beeing carried with carryheavy
 public func GetCarryHeavy() { return lib_carryheavy_obj; }
 public func IsCarryingHeavy() { return lib_carryheavy_obj != nil; }
 
+
+// Helper function to create carry heavy contents without doing the pick up animation.
+public func CreateCarryHeavyContents(id obj_id, int amount)
+{
+	this.BlockCarryHeavyPickUpAnimation = true;
+	var res = CreateContents(obj_id, amount);
+	this.BlockCarryHeavyPickUpAnimation = false;
+	return res;
+}
+
 /* Overloads for Inventory */
 
 // Check if we can carry a carry heavy object
@@ -97,7 +107,7 @@ public func GetExtraInteractions()
 	var functions = _inherited(...);
 
 	// dropping carry heavy
-	if(IsCarryingHeavy() && GetAction() == "Walk")
+	if (IsCarryingHeavy() && GetAction() == "Walk")
 	{
 		var ch = GetCarryHeavy();
 		PushBack(functions, {Fn = "DropCarryHeavy", Description=ch->GetDropDescription(), Object=this, IconName="", IconID=Icon_LetGo, Priority=1});
@@ -110,13 +120,13 @@ public func GetExtraInteractions()
 /** Tells the clonk that he is carrying the given carry heavy object */
 public func CarryHeavy(object target)
 {
-	if(!target)
+	if (!target)
 		return;
 	// actually.. is it a carry heavy object?
-	if(!target->~IsCarryHeavy())
+	if (!target->~IsCarryHeavy())
 		return;
-	// only if not carrying a heavy objcet already
-	if(IsCarryingHeavy())
+	// only if not carrying a heavy object already
+	if (IsCarryingHeavy())
 		return;
 
 	lib_carryheavy_obj = target;
@@ -173,7 +183,7 @@ private func DoLiftCarryHeavy(object obj)
 	if (obj->Contained() != this)
 		return;
 	// If inside something or not walking, skip the animation
-	if (Contained() || GetAction() != "Walk")
+	if (Contained() || GetAction() != "Walk" || this.BlockCarryHeavyPickUpAnimation)
 		return;
 	AddEffect("IntLiftHeavy", this, 1, 1, this, nil, obj);
 }

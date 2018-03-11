@@ -178,6 +178,7 @@ inline uint8_t Key_GetMouseEvent(C4KeyCode key)
 	return ((uint32_t)key) & uint8_t(0xff);
 }
 
+bool KEY_IsModifier(C4KeyCode k);
 
 #ifdef _WIN32
 #define TOUPPERIFX11(key) (key)
@@ -228,7 +229,8 @@ struct C4KeyCodeEx
 
 	void CompileFunc(StdCompiler *pComp, StdStrBuf *pOutBuf=nullptr);
 
-	C4KeyCodeEx(C4KeyCode Key = KEY_Default, C4KeyShiftState Shift = KEYS_None, bool fIsRepeated = false, int32_t deviceId = -1);
+	C4KeyCodeEx(C4KeyCode Key = KEY_Default, DWORD Shift = KEYS_None, bool fIsRepeated = false, int32_t deviceId = -1);
+	static C4KeyCodeEx FromC4MC(int8_t mouse_id, int32_t button, DWORD param, bool * is_down = nullptr);
 
 	bool IsRepeated() const { return fRepeated; }
 
@@ -473,6 +475,9 @@ public:
 // a key that auto-registers itself into main game keyboard input class and does dereg when deleted
 class C4KeyBinding : protected C4CustomKey
 {
+	// Stuffing these into an std::vector ends badly, so I've marked them non-copyable.
+	C4KeyBinding(const C4KeyBinding&) = delete;
+	C4KeyBinding& operator=(const C4KeyBinding&) = delete;
 public:
 	C4KeyBinding(const C4KeyCodeEx &DefCode, const char *szName, C4KeyScope Scope, C4KeyboardCallbackInterface *pCallback, unsigned int uiPriority = PRIO_Base); // ctor for default key
 	C4KeyBinding(const CodeList &rDefCodes, const char *szName, C4KeyScope Scope, C4KeyboardCallbackInterface *pCallback, unsigned int uiPriority = PRIO_Base); // ctor for default key

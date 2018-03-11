@@ -346,6 +346,10 @@ CStdGLCtx *CStdGL::CreateContext(C4Window * pWindow, C4AbstractApp *pApp)
 				LogSilentF("GLExt: %s", gl_extensions ? gl_extensions : "");
 			}
 		}
+		if (!success)
+		{
+			pApp->MessageDialog("Error while initializing OpenGL. Check the log file for more information. This usually means your GPU is too old.");
+		}
 	}
 	if (!success)
 	{
@@ -353,6 +357,10 @@ CStdGLCtx *CStdGL::CreateContext(C4Window * pWindow, C4AbstractApp *pApp)
 	}
 	// creation selected the new context - switch back to previous context
 	RenderTarget = nullptr;
+#ifdef WITH_QT_EDITOR
+	// FIXME This is a hackfix for #1813 / #1956. The proper way to fix them would probably be to select a drawing context before invoking C4Player::FinalInit
+	if (!app->isEditor)
+#endif
 	pCurrCtx = nullptr;
 	// done
 	return pCtx;

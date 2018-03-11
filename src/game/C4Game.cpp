@@ -1458,6 +1458,7 @@ void C4Game::Default()
 	HaltCount=0;
 	fReferenceDefinitionOverride=false;
 	Evaluated=false;
+	EvaluateOnAbort=false;
 	TimeGo=false;
 	Time=0;
 	StartTime=0;
@@ -2264,6 +2265,8 @@ bool C4Game::InitGame(C4Group &hGroup, InitMode init_mode, bool fLoadSky, C4Valu
 		{
 			RoundResults.Init();
 		}
+		// Per-scenario flag, ignored in sections.
+		EvaluateOnAbort = C4S.Game.EvaluateOnAbort;
 	}
 
 	// Denumerate game data pointers
@@ -3215,10 +3218,10 @@ bool C4Game::InitNetworkFromReferenceFile(const char *temp_filename)
 	// Load reference from temp file + delete the temp file
 	bool success = false;
 	C4Network2Reference ref;
-	StdBuf join_data;
+	StdStrBuf join_data;
 	if (join_data.LoadFromFile(temp_filename))
 	{
-		CompileFromBuf<StdCompilerBinRead>(ref, join_data);
+		CompileFromBuf<StdCompilerINIRead>(mkNamingAdapt(ref, "Reference"), join_data);
 		success = true;
 	}
 	EraseFile(temp_filename);
@@ -3676,6 +3679,12 @@ void C4Game::Abort(bool fApproved)
 			Network.Vote(VT_Kick, true, Control.ClientID());
 			return;
 		}
+	}
+	if (EvaluateOnAbort)
+	{
+		// Scenario forces evaluation. This is intended for scenarios that
+		// always save progress in the players, such as Tower of Despair.
+		Evaluate();
 	}
 	// hard-abort: eval league and quit
 	// manually evaluate league

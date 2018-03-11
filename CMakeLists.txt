@@ -43,6 +43,7 @@ list(APPEND CMAKE_PREFIX_PATH ${CMAKE_ADDITIONAL_DEPS_PATH})
 ############################################################################
 include(CMakeDependentOption)
 option(PROJECT_FOLDERS "Put source files into subfolders in project file" ON)
+option(DEPLOY_QT_LIBRARIES "Deploy Qt libraries to executable path" OFF)
 CMAKE_DEPENDENT_OPTION(USE_COCOA         "Use Apple Cocoa widgets." ON "APPLE" OFF)
 CMAKE_DEPENDENT_OPTION(USE_WIN32_WINDOWS "Use Microsoft Desktop App User Interface widgets." ON "WIN32" OFF)
 CMAKE_DEPENDENT_OPTION(USE_SDL_MAINLOOP  "Use SDL to create windows etc. Qt editor." ON "NOT USE_COCOA AND NOT USE_WIN32_WINDOWS AND NOT HEADLESS_ONLY" OFF)
@@ -158,7 +159,7 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wextra-tokens -Wpointer-arith -Wno-cast-align -Wno-reorder -Wno-unused-parameter -Wnon-virtual-dtor -Woverloaded-virtual")
 elseif(CMAKE_COMPILER_IS_GNUCXX)
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wredundant-decls -Wendif-labels -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Winit-self -Wsign-promo -Wno-reorder -Wno-unused-parameter -Wnon-virtual-dtor -Woverloaded-virtual")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wredundant-decls -Wendif-labels -Wpointer-arith -Wcast-qual -Wcast-align -Wwrite-strings -Winit-self -Wsign-promo -Wno-reorder -Wno-unused-parameter -Wnon-virtual-dtor -Woverloaded-virtual -Wformat-security")
 endif()
 
 if(WIN32 AND MINGW)
@@ -177,6 +178,12 @@ endif()
 ############################################################################
 # Check for compiler quirks and features
 ############################################################################
+if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_CROSSCOMPILING)
+	include(HandleGccCrossIncludePaths)
+	HANDLE_GCC_CROSS_INCLUDE_PATHS(CXX c++)
+	HANDLE_GCC_CROSS_INCLUDE_PATHS(C c)
+endif()
+
 include(CheckCXXSourceCompiles)
 include(RequireCXXSourceCompiles)
 include(CheckCXXSymbolExists)
@@ -298,6 +305,17 @@ if(UNIX AND NOT APPLE)
 	find_package(Backward)
 	if(Backward_FOUND)
 		set(HAVE_BACKWARD 1)
+	endif()
+
+	if(NOT DEFINED PROC_SELF_EXE)
+		macro(FIND_PROC_SELF_EXE path)
+			if(EXISTS ${path})
+				set(PROC_SELF_EXE ${path} CACHE FILEPATH "Path to /proc/self/exe (Linux) or equivalent")
+			endif()
+		endmacro()
+		FIND_PROC_SELF_EXE(/proc/self/exe)     # Linux
+		FIND_PROC_SELF_EXE(/proc/curproc/file) # FreeBSD
+		FIND_PROC_SELF_EXE(/proc/curproc/exe)  # NetBSD
 	endif()
 endif()
 
@@ -1074,6 +1092,8 @@ src/script/C4PropList.h
 src/script/C4Script.cpp
 src/script/C4ScriptHost.cpp
 src/script/C4ScriptHost.h
+src/script/C4ScriptLibraries.cpp
+src/script/C4ScriptLibraries.h
 src/script/C4StringTable.cpp
 src/script/C4StringTable.h
 src/script/C4Value.cpp
@@ -1083,8 +1103,9 @@ src/script/C4ValueArray.h
 src/script/C4ValueMap.cpp
 src/script/C4ValueMap.h
 )
-
-target_link_libraries(libc4script libmisc)
+add_subdirectory(thirdparty/blake2)
+set_property(TARGET blake2 PROPERTY FOLDER "Third-party libraries")
+target_link_libraries(libc4script blake2 libmisc)
 
 add_library(libopenclonk
 	src/c4group/C4Extra.cpp
@@ -1189,6 +1210,17 @@ if(NOT HEADLESS_ONLY)
 	if(WITH_QT_EDITOR)
 		set_target_properties(openclonk PROPERTIES COMPILE_DEFINITIONS WITH_QT_EDITOR)
 		target_link_libraries(openclonk Qt5::Widgets)
+
+		# Deploy dependency libraries and platforms/ folder
+		if(DEPLOY_QT_LIBRARIES)
+			if(WIN32)
+				include(DeployQt)
+				windeployqt(openclonk)
+			elseif(APPLE)
+				include(DeployQt)
+				macdeployqt(nitroshare-client)
+			endif()
+		endif()
 	endif()
 
 	if(HAVE_BACKWARD)
@@ -1209,9 +1241,7 @@ target_link_libraries(openclonk-server
 	${PNG_LIBRARIES}
 	${JPEG_LIBRARIES}
 	${EXECINFO_LIBRARY}
-	${SDL2_LIBRARIES}
 	${READLINE_LIBRARIES}
-	${Audio_LIBRARIES}
 	${GETOPT_LIBRARIES}
 	${TinyXML_LIBRARIES}
 	${DBGHELP_LIBRARIES}
