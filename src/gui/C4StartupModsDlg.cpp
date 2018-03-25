@@ -104,6 +104,13 @@ ModXMLData::ModXMLData(const TiXmlElement *xml, Source source)
 			dependencies.push_back(depID);
 	}
 
+	for (const TiXmlElement *node = xml->FirstChildElement("tags"); node != nullptr; node = node->NextSiblingElement("tags"))
+	{
+		const char *tag = node->GetText();
+		if (tag != nullptr)
+			tags.push_back(tag);
+	}
+
 	for (const TiXmlElement *filenode = xml->FirstChildElement("file"); filenode != nullptr; filenode = filenode->NextSiblingElement("file"))
 	{
 		// We guarantee that we do not modify the handle below, thus the const_cast is safe.
@@ -180,6 +187,9 @@ C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GU
 			const int alignment = alignments[c];
 			rcLabelBounds.y = 1 + i*(iLineHgt + 2);
 			rcLabelBounds.Wdt = iThisWdt - rcLabelBounds.x - 1;
+			// The first line leaves some extra space for the icons.
+			if (i == 0)
+				rcLabelBounds.Wdt -= rcIconRect.x;
 			C4GUI::Label * const pLbl = new C4GUI::Label("", rcLabelBounds, alignment, C4GUI_CaptionFontClr);
 			if (alignment == ALeft) pInfoLbl[i] = pLbl;
 			else if (alignment == ARight) pInfoLabelsRight[i] = pLbl;
@@ -220,6 +230,25 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml, ModXMLData::Source
 	const std::string author = getSafeStringValue(xml->FirstChildElement("author"), "username", "???");
 	const std::string title = modXMLData->title.empty() ? "???" : modXMLData->title;
 	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), title.c_str(), author.c_str());
+
+	bool hasScenario = false;
+	static std::string openclonkVersionStringTag;
+	if (openclonkVersionStringTag.empty())
+		openclonkVersionStringTag = "openclonk-" + std::to_string(C4XVER1);
+	for (auto &tag : modXMLData->tags)
+	{
+		if ((tag == ".ocs" || tag == ".ocf") && !hasScenario)
+		{
+			AddStatusIcon(C4GUI::Icons::Ico_Gfx, LoadResStr("IDS_MODS_TAGS_SCENARIO"));
+			hasScenario = true;
+		}
+		else if (tag == ".ocd")
+			AddStatusIcon(C4GUI::Icons::Ico_Definition, LoadResStr("IDS_MODS_TAGS_OBJECT"));
+		else if (tag == "multiplayer")
+			AddStatusIcon(C4GUI::Icons::Ico_Team, LoadResStr("IDS_MODS_TAGS_MULTIPLAYER"));
+		else if (tag == openclonkVersionStringTag)
+			AddStatusIcon(C4GUI::Icons::Ico_Clonk, LoadResStr("IDS_MODS_TAGS_COMPATIBLE"));
+	}
 
 	for (auto &file : modXMLData->files)
 	{

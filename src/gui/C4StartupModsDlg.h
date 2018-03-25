@@ -43,6 +43,7 @@ struct ModXMLData
 	};
 	std::vector<FileInfo> files;
 	std::vector<std::string> dependencies;
+	std::vector<std::string> tags;
 	std::string title;
 	std::string id;
 	std::string description;
