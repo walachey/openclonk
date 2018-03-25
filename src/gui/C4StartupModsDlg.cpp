@@ -145,7 +145,7 @@ ModXMLData::~ModXMLData()
 // ----------- C4StartupNetListEntry -----------------------------------------------------------------------
 
 C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GUI::Element *pInsertBefore, C4StartupModsDlg *pModsDlg)
-		: pModsDlg(pModsDlg), pList(pForListBox), fError(false), iInfoIconCount(0), iSortOrder(0), fIsSmall(false), fIsCollapsed(false), fIsEnabled(true), fIsImportant(false)
+		: pModsDlg(pModsDlg), pList(pForListBox), iInfoIconCount(0)
 {
 	// calc height
 	int32_t iLineHgt = ::GraphicsResource.TextFont.GetLineHeight(), iHeight = iLineHgt * 2 + 4;
@@ -190,14 +190,12 @@ C4StartupModsListEntry::C4StartupModsListEntry(C4GUI::ListBox *pForListBox, C4GU
 			pLbl->SetBounds(rcLabelBounds);
 		}
 	}
-	// update small state, which will resize this to a small entry
-	UpdateSmallState();
-	// Set*-function will fill icon and text and calculate actual size
+	UpdateEntrySize();
 }
 
 C4StartupModsListEntry::~C4StartupModsListEntry()
 {
-	ClearRef();
+	Clear();
 }
 
 void C4StartupModsListEntry::FromXML(const TiXmlElement *xml, ModXMLData::Source source, std::string fallbackID, std::string fallbackName)
@@ -248,7 +246,7 @@ void C4StartupModsListEntry::MakeInfoEntry()
 
 	// set info
 	sInfoText[0].Copy(LoadResStr("IDS_MODS_SEARCHING"));
-	UpdateSmallState(); UpdateText();
+	UpdateText();
 }
 
 void C4StartupModsListEntry::OnNoResultsFound()
@@ -277,30 +275,18 @@ void C4StartupModsListEntry::OnError(std::string message)
 void C4StartupModsListEntry::DrawElement(C4TargetFacet &cgo)
 {
 	typedef C4GUI::Window ParentClass;
-	// background if important and not selected
-	if (fIsImportant && !IsSelectedChild(this))
-	{
-		int32_t x1 = cgo.X+cgo.TargetX+rcBounds.x;
-		int32_t y1 = cgo.Y+cgo.TargetY+rcBounds.y;
-		pDraw->DrawBoxDw(cgo.Surface, x1,y1, x1+rcBounds.Wdt, y1+rcBounds.Hgt, C4GUI_ImportantBGColor);
-	}
 	// inherited
 	ParentClass::DrawElement(cgo);
 }
 
-void C4StartupModsListEntry::ClearRef()
+void C4StartupModsListEntry::Clear()
 {
-	fError = false;
-	sError.Clear();
 	int32_t i;
 	for (i = 0; i < InfoLabelCount; ++i)
 	{
 		sInfoText[i].Clear();
 		sInfoTextRight[i].Clear();
 	}
-	InvalidateStatusIcons();
-	fIsEnabled = true;
-	fIsImportant = false;
 }
 
 bool C4StartupModsListEntry::Execute()
@@ -308,46 +294,11 @@ bool C4StartupModsListEntry::Execute()
 	return true;
 }
 
-C4GUI::Element* C4StartupModsListEntry::GetNextLower(int32_t sortOrder)
-{
-	// search list for the next element of a lower sort order
-	for (C4GUI::Element *pElem = pList->GetFirst(); pElem; pElem = pElem->GetNext())
-	{
-		C4StartupModsListEntry *pEntry = static_cast<C4StartupModsListEntry *>(pElem);
-		if (pEntry->iSortOrder < sortOrder)
-			return pElem;
-	}
-	// none found: insert at start
-	return nullptr;
-}
-
-void C4StartupModsListEntry::UpdateCollapsed(bool fToCollapseValue)
-{
-	// if collapsed state changed, update the text
-	if (fIsCollapsed == fToCollapseValue) return;
-	fIsCollapsed = fToCollapseValue;
-	UpdateSmallState();
-}
-
-void C4StartupModsListEntry::UpdateSmallState()
-{
-	// small view: Always collapsed if there is no extended text
-	bool fNewIsSmall = !sInfoText[2].getLength() || fIsCollapsed;
-	if (fNewIsSmall == fIsSmall) return;
-	fIsSmall = fNewIsSmall;
-	for (int i = 2; i < InfoLabelCount; ++i)
-	{
-		pInfoLbl[i]->SetVisibility(!fIsSmall);
-		pInfoLabelsRight[i]->SetVisibility(!fIsSmall);
-	}
-	UpdateEntrySize();
-}
-
 void C4StartupModsListEntry::UpdateEntrySize()
 {
 	if(fVisible) {
 		// restack all labels by their size
-		const int32_t iLblCnt = (fIsSmall ? 2 : InfoLabelCount);
+		const int32_t iLblCnt = InfoLabelCount;
 		for (int c = 0; c < 2; ++c)
 		{
 			int iY = 1;
@@ -427,7 +378,7 @@ void C4StartupModsListEntry::UpdateText()
 				}
 			}
 			infoLabel->SetText(BrokenText.getData());
-			infoLabel->SetColor(fIsEnabled ? C4GUI_MessageFontClr : C4GUI_InactMessageFontClr);
+			infoLabel->SetColor(C4GUI_MessageFontClr);
 		}
 	}
 	if (fRestackElements) UpdateEntrySize();
@@ -447,19 +398,6 @@ void C4StartupModsListEntry::AddStatusIcon(C4GUI::Icons eIcon, const char *szToo
 	pInfoIcons[iInfoIconCount]->SetIcon(eIcon);
 	pInfoIcons[iInfoIconCount]->SetToolTip(szToolTip);
 	++iInfoIconCount;
-}
-
-void C4StartupModsListEntry::SetError(const char *szErrorText)
-{
-	// set error message
-	fError = true;
-	sInfoText[1].Copy(szErrorText);
-	for (int i=2; i<InfoLabelCount; ++i) sInfoText[i].Clear();
-	InvalidateStatusIcons();
-	UpdateSmallState(); UpdateText();
-	pIcon->SetIcon(C4GUI::Ico_Close);
-	pIcon->SetAnimated(false, 0);
-	pIcon->SetBounds(rctIconSmall);
 }
 
 void C4StartupModsLocalModDiscovery::Execute()
@@ -499,11 +437,6 @@ void C4StartupModsLocalModDiscovery::ExecuteDiscovery()
 		const std::string name = leaf.substr(idSeparatorPosition + 1);
 		AddMod(id, filename, name);
 	}
-}
-
-bool C4StartupModsListEntry::KeywordMatch(const char *szMatch)
-{
-	return false;
 }
 
 C4StartupModsDownloader::C4StartupModsDownloader(C4StartupModsDlg *parent, const C4StartupModsListEntry *entry) : CStdTimerProc(30)
@@ -1106,7 +1039,7 @@ void C4StartupModsDownloader::ModInfo::LocalDiscoveryCheck::Execute()
 
 // ----------- C4StartupNetDlg ---------------------------------------------------------------------------------
 
-C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), pMasterserverClient(nullptr), fIsCollapsed(false), modsDiscovery(this)
+C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")), modsDiscovery(this)
 {
 	// ctor
 	// key bindings
@@ -1256,7 +1189,6 @@ C4StartupModsDlg::~C4StartupModsDlg()
 	Application.InteractiveThread.ClearCallback(Ev_HTTP_Response, this);
 
 	Application.Remove(this);
-	if (pMasterserverClient) delete pMasterserverClient;
 	// dtor
 	delete pKeyBack;
 	delete pKeyRefresh;
@@ -1281,7 +1213,6 @@ void C4StartupModsDlg::OnClosed(bool fOK)
 {
 	// dlg abort: return to main screen
 	CancelRequest();
-	if (pMasterserverClient) { delete pMasterserverClient; pMasterserverClient=nullptr; }
 	if (!fOK) DoBack();
 }
 
@@ -1367,11 +1298,6 @@ void C4StartupModsDlg::QueryModList(bool loadNextPage)
 	postClient->SetNotify(&Application.InteractiveThread);
 	Application.InteractiveThread.AddProc(postClient.get());
 	postClient->Query(nullptr, false); // Empty query.
-
-	/*pMasterserverClient = new C4StartupModsListEntry(pGameSelList, nullptr, this);
-	StdStrBuf strVersion; strVersion.Format("%d.%d", C4XVER1, C4XVER2);
-	StdStrBuf strQuery; strQuery.format("%s?version=%s&platform=%s", Config.Network.GetLeagueServerAddress(), strVersion.getData(), C4_OS);
-	pMasterserverClient->SetRefQuery(strQuery.getData(), C4StartupNetListEntry::NRQT_Masterserver);*/
 }
 
 void C4StartupModsDlg::CancelRequest()
@@ -1563,40 +1489,13 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 		}
 	}
 
-	// check whether view needs to be collapsed or uncollapsed
-	if (fIsCollapsed && fAnyRemoval)
-	{
-		// try uncollapsing
-		fIsCollapsed = false;
-		UpdateCollapsed();
-		// if scrolling is still necessary, the view will be collapsed again immediately
-	}
-	if (!fIsCollapsed && pGameSelList->IsScrollingNecessary())
-	{
-		fIsCollapsed = true;
-		UpdateCollapsed();
-	}
-
 	// done; selection might have changed
 	pGameSelList->UnFreezeScrolling();
-	UpdateSelection(false);
+	UpdateSelection();
 }
 
-void C4StartupModsDlg::UpdateCollapsed()
+void C4StartupModsDlg::UpdateSelection()
 {
-	// update collapsed state for all child entries
-	for (C4GUI::Element *pElem = pGameSelList->GetFirst(); pElem; pElem = pElem->GetNext())
-	{
-		C4StartupModsListEntry *pEntry = static_cast<C4StartupModsListEntry *>(pElem);
-		pEntry->UpdateCollapsed(fIsCollapsed && pElem != pGameSelList->GetSelectedItem());
-	}
-}
-
-void C4StartupModsDlg::UpdateSelection(bool fUpdateCollapsed)
-{
-	// in collapsed view, updating the selection may uncollapse something
-	if (fIsCollapsed && fUpdateCollapsed) UpdateCollapsed();
-
 	C4StartupModsListEntry *selected = static_cast<C4StartupModsListEntry*>(pGameSelList->GetSelectedItem());
 	btnInstall->SetEnabled(false);
 	btnRemove->SetEnabled(false);
@@ -1761,7 +1660,7 @@ bool C4StartupModsDlg::KeyRefresh()
 
 void C4StartupModsDlg::DoRefresh()
 {
-	// restart masterserver query
+	// restart server query
 	QueryModList();
 	// done; update stuff
 	UpdateList();
