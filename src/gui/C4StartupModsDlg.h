@@ -46,8 +46,9 @@ struct ModXMLData
 	std::vector<std::string> tags;
 	std::string title;
 	std::string id;
-	std::string description;
+	std::string description, longDescription;
 	std::string slug;
+	bool metadataMissing{ false };
 	
 	// Depending on the origin of the data, we might need an update query before doing anything.
 	enum class Source
@@ -177,6 +178,7 @@ private:
 		bool HasError() const { return !errorMessage.empty(); }
 		bool WasSuccessful() const { return successful && !HasError(); }
 		bool IsBusy() const { return postClient.get() != nullptr; }
+		bool HasFilesRemaining() const { return !files.empty(); }
 		bool RequiresMetadataUpdate() const { return hasOnlyIncompleteInformation; }
 		std::string GetErrorMessage() const { if (errorMessage.empty()) return ""; return name + ": " + errorMessage; }
 		std::string GetPath();
@@ -198,6 +200,7 @@ private:
 		bool successful{ false };
 		// Whether the information might be outdated or incomplete and needs an update prior to hash-checking.
 		bool hasOnlyIncompleteInformation{ true };
+		size_t totalSuccesfullyDownloadedBytes{ 0 };
 		size_t downloadedBytes{ 0 };
 		size_t totalBytes{ 0 };
 		std::unique_ptr<C4Network2HTTPClient> postClient;
@@ -267,7 +270,7 @@ private:
 	StdStrBuf sInfoText[InfoLabelCount];
 	StdStrBuf sInfoTextRight[InfoLabelCount];
 
-	void AddStatusIcon(C4GUI::Icons eIcon, const char *szToolTip); // add a status icon with the specified tooltip
+	void AddStatusIcon(C4GUI::Icons eIcon, const char *szToolTip, bool insertLeft=true); // add a status icon with the specified tooltip
 
 	void UpdateEntrySize();
 	void UpdateText(); 
@@ -365,6 +368,7 @@ private:
 	void CancelRequest();
 
 	static std::string GetBaseServerURL();
+	static std::string GetOpenClonkVersionStringTag();
 	void QueryModList(bool loadNextPage=false);
 	void ClearList();
 	void UpdateList(bool fGotReference = false, bool onlyWithLocalFiles = false);
@@ -405,9 +409,22 @@ private:
 
 	struct _PageInfo
 	{
+		const int maxResultsPerQuery{ 30 };
 		int totalResults{ 0 };
-		int currentPage{ 0 };
-		int totalPages{ 0 };
+		int currentlySkipped{ 0 };
+
+		int getItemsToPage(int itemNumber) const
+		{
+			return itemNumber / maxResultsPerQuery + static_cast<int>(itemNumber % maxResultsPerQuery != 0);
+		}
+		int getCurrentPage() const
+		{
+			return getItemsToPage(currentlySkipped) + 1;
+		}
+		int getTotalPages() const
+		{
+			return getItemsToPage(totalResults);
+		}
 	} pageInfo;
 public:
 	// The "subscreen" is used by the clonk://installmod protocol and gives a mod ID to search.
