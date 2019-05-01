@@ -1237,13 +1237,20 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	}
 	{
 		CStdFont *pUseFont = &(C4Startup::Get()->Graphics.BookFont);
-		const char *szText = LoadResStr("IDS_MODS_FILTER_COMPATIBLE");
-		int iWdt = 100, iHgt = 12;
-		C4GUI::CheckBox::GetStandardCheckBoxSize(&iWdt, &iHgt, szText, pUseFont);
-		filters.showCompatible = new C4GUI::CheckBox(caConfigArea.GetFromTop(iHgt, iWdt), szText, true);
-		filters.showCompatible->SetToolTip(LoadResStr("IDS_MODS_FILTER_COMPATIBLE_DESC"));
-		AddElement(filters.showCompatible);
+		auto addCheckbox = [&pUseFont, &caConfigArea, this] (C4GUI::CheckBox**checkbox, const char *szText, const char *szTooltip)
+		{
+			int iWdt = 150, iHgt = 12;
+			C4GUI::CheckBox::GetStandardCheckBoxSize(&iWdt, &iHgt, szText, pUseFont);
+			*checkbox = new C4GUI::CheckBox(caConfigArea.GetFromTop(iHgt, -1), szText, true);
+			(*checkbox)->SetToolTip(szTooltip);
+			AddElement(*checkbox);
+		};
+		addCheckbox(&filters.showCompatible, LoadResStr("IDS_MODS_FILTER_COMPATIBLE"), LoadResStr("IDS_MODS_FILTER_COMPATIBLE_DESC"));
+		addCheckbox(&filters.showPlayable, LoadResStr("IDS_MODS_FILTER_PLAYABLE"), LoadResStr("IDS_MODS_FILTER_PLAYABLE_DESC"));
 	}
+	// Add button to manually search the database (as opposed to hitting F5).
+	AddElement(btn = new C4GUI::CallbackButton<C4StartupModsDlg>(LoadResStr("IDS_MODS_SEARCH_ONLINE"), caConfigArea.GetFromTop(iButtonHeight), &C4StartupModsDlg::OnSearchOnlineBtn));
+	btn->SetToolTip(LoadResStr("IDS_MODS_SEARCH_ONLINE_DESC"));
 	// initial focus
 	SetFocus(GetDlgModeFocusControl(), false);
 	
@@ -1352,6 +1359,10 @@ void C4StartupModsDlg::QueryModList(bool loadNextPage)
 	{
 		static const std::string versionTag = GetOpenClonkVersionStringTag();
 		tagFilters.push_back(versionTag);
+	}
+	if (filters.showPlayable->GetChecked())
+	{
+		tagFilters.push_back(".ocs");
 	}
 	if (!tagFilters.empty())
 	{

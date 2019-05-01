@@ -324,6 +324,7 @@ private:
 	struct _filters
 	{
 		C4GUI::CheckBox *showCompatible{ nullptr };
+		C4GUI::CheckBox *showPlayable{ nullptr };
 	} filters;
 	// Whether the last query was successful. No re-fetching will be done.
 	bool queryWasSuccessful = false;
@@ -350,7 +351,7 @@ protected:
 	virtual void OnShown();             // callback when shown: Start searching for games
 	virtual void OnClosed(bool fOK);    // callback when dlg got closed: Return to main screen
 	void OnBackBtn(C4GUI::Control *btn) { DoBack(); }
-	void OnRefreshBtn(C4GUI::Control *btn) { DoRefresh(); }
+	void OnSearchOnlineBtn(C4GUI::Control *btn) { KeyRefresh(); }
 	void OnInstallModBtn(C4GUI::Control *btn) { DoOK(); }
 	void OnShowInstalledBtn(C4GUI::Control *btn) { UpdateList(false, true); }
 	void OnUninstallModBtn(C4GUI::Control *btn) { CheckRemoveMod(); }
