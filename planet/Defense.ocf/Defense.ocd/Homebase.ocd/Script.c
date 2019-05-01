@@ -107,9 +107,10 @@ public func UpdateIndexedItem(int index)
 			for (var req in entry.requirements)
 				if (!techs[req])
 					available = false;
+		var tier;
 		if (entry.tiers)
 		{
-			var tier = techs[entry.tech];
+			tier = techs[entry.tech];
 			entry.graphic = Format(entry.graphics, tier+1);
 			entry.cost = entry.costs[tier];
 		}
@@ -337,11 +338,13 @@ private func GainTechnology(proplist entry)
 	// Technology gain callback.
 	Call(Format("~Gain%s", entry.tech), entry, tier);
 	// Update any related techs that may become available
-	var n = GetLength(base_material), req;
+	var n = GetLength(base_material);
 	for (var i=0; i<n; ++i)
-		if (req = base_material[i].requirements)
-			if (GetIndexOf(req, entry.tech) >= 0)
-				UpdateIndexedItem(i);
+	{
+		var req = base_material[i].requirements;
+		if (req && GetIndexOf(req, entry.tech) >= 0)
+			UpdateIndexedItem(i);
+	}
 	return true;
 }
 

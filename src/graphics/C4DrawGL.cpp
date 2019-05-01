@@ -203,6 +203,7 @@ bool CStdGL::PrepareSpriteShader(C4Shader& shader, const char* name, int ssc, C4
 	uniformNames[C4SSU_NormalMatrix] = "normalMatrix";
 	uniformNames[C4SSU_ClrMod] = "clrMod";
 	uniformNames[C4SSU_Gamma] = "gamma";
+	uniformNames[C4SSU_Resolution] = "resolution";
 	uniformNames[C4SSU_BaseTex] = "baseTex";
 	uniformNames[C4SSU_OverlayTex] = "overlayTex";
 	uniformNames[C4SSU_OverlayClr] = "overlayClr";
@@ -609,6 +610,10 @@ void CStdGL::PerformMultiBlt(C4Surface* sfcTarget, DrawOperation op, const C4Blt
 	assert(sfcTarget->IsRenderTarget());
 	if(!PrepareRendering(sfcTarget)) return;
 
+	// Set resolution. The other uniforms are set in SetupMultiBlt, but the
+	// surface size is still unknown there.
+	shader_call->SetUniform2f(C4SSU_Resolution, sfcTarget->Wdt, sfcTarget->Hgt);
+
 	// Select a buffer
 	const unsigned int vbo_index = CurrentVBO;
 	CurrentVBO = (CurrentVBO + 1) % N_GENERIC_VBOS;
@@ -722,6 +727,9 @@ C4Shader* CStdGL::GetSpriteShader(int ssc)
 
 bool CStdGL::InitShaders(C4GroupSet* pGroups)
 {
+	if (!pCurrCtx)
+		EnsureMainContextSelected();
+
 	// Create sprite blitting shaders
 	if(!PrepareSpriteShader(SpriteShader, "sprite", 0, pGroups, nullptr, nullptr))
 		return false;

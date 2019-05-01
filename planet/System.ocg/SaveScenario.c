@@ -77,6 +77,7 @@ global func SaveScenarioObjects(f, duplicate_objects)
 	obj_data = SaveScen_SetContainers(obj_data);
 	// Write header
 	FileWrite(f, "/* Automatically created objects file */\n\n");
+	FileWrite(f, "#warning disable\n\n");
 	// Declare static variables for objects that wish to have them
 	for (obj in objs)
 	{
@@ -300,27 +301,27 @@ global func SaveScen_SetContainers(array obj_data)
 		}
 	}
 	// Concatenate multiple contents creations
-	var cont;
-	for (var obj in obj_data) if ((cont = obj.o->Contained())) if (obj.props->HasProp(SAVEOBJ_ContentsCreationEx))
-	{
-		var num_contents_concat = 1;
-		if ((!obj.o.StaticSaveVar || save_scenario_dup_objects) && !obj.write_label)
+	for (var obj in obj_data)
+		if (obj.o->Contained() && obj.props->HasProp(SAVEOBJ_ContentsCreationEx))
 		{
-			for (var obj2 in obj_data) if (obj2 != obj && obj2.o->Contained() == cont && obj.o->GetID() == obj2.o->GetID() && obj2.props->HasProp(SAVEOBJ_ContentsCreationEx))
+			var num_contents_concat = 1;
+			if ((!obj.o.StaticSaveVar || save_scenario_dup_objects) && !obj.write_label)
 			{
-				++num_contents_concat;
-				obj2.props->Clear();
+				for (var obj2 in obj_data) if (obj2 != obj && obj2.o->Contained() == obj.o->Contained() && obj.o->GetID() == obj2.o->GetID() && obj2.props->HasProp(SAVEOBJ_ContentsCreationEx))
+				{
+					++num_contents_concat;
+					obj2.props->Clear();
+				}
 			}
+			if (num_contents_concat > 1)
+			{
+				obj.props->Remove(SAVEOBJ_ContentsCreation);
+				var creation_prop = obj.props->HasProp(SAVEOBJ_ContentsCreationEx);
+				creation_prop.s = Format(creation_prop.s, num_contents_concat);
+			}
+			else
+				obj.props->Remove(SAVEOBJ_ContentsCreationEx);
 		}
-		if (num_contents_concat > 1)
-		{
-			obj.props->Remove(SAVEOBJ_ContentsCreation);
-			var creation_prop = obj.props->HasProp(SAVEOBJ_ContentsCreationEx);
-			creation_prop.s = Format(creation_prop.s, num_contents_concat);
-		}
-		else
-			obj.props->Remove(SAVEOBJ_ContentsCreationEx);
-	}
 	return obj_data;
 }
 
@@ -451,7 +452,7 @@ global func SaveScenarioObject(props)
 		var all_prop_names = GetProperties(this.EditorProps), prop_name, prop;
 		for (prop_name in all_prop_names)
 		{
-			if ((prop=this.EditorProps[prop_name]))
+			if ((prop = this.EditorProps[prop_name]) != nil)
 			{
 				if (GetType(prop) == C4V_PropList)
 				{
@@ -497,9 +498,10 @@ global func SaveScenarioObject(props)
 global func SaveScenarioObjectAction(props)
 {
 	// Helper function to store action properties
-	var v;
 	props->AddCall("Action", this, "SetAction", Format("%v", GetAction() ?? "Idle"), GetActionTarget(), GetActionTarget(1));
-	if (v = GetPhase()) props->AddCall("Phase", this, "SetPhase", v);
+	var v = GetPhase();
+	if (v)
+		props->AddCall("Phase", this, "SetPhase", v);
 	return true;
 }
 
@@ -568,7 +570,7 @@ global func GetBitmaskNameByValue(v, prefix)
 {
 	// Compose bitmask of names of individual bits
 	// e.g. GetBitmaskNameByValue(3, "C4D_") == "C4D_StaticBack|C4D_Structure"
-	var s, n=0;
+	var s;
 	for (var i=0; i<31 && v; ++i)
 	{
 		var v2 = 1<<i;

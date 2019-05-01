@@ -142,7 +142,8 @@ namespace
 			d = 2 * dx - dy; aincr = 2 * (dx - dy); bincr = 2 * dx; x = x1; y = y1;
 			if (!fnCallback(x, y))
 			{
-				if (lastx) *lastx = x; if (lasty) *lasty = y;
+				if (lastx) *lastx = x;
+				if (lasty) *lasty = y;
 				return false;
 			}
 			for (y = y1 + 1; y <= y2; ++y)
@@ -151,7 +152,8 @@ namespace
 				else d += bincr;
 				if (!fnCallback(x, y))
 				{
-					if (lastx) *lastx = x; if (lasty) *lasty = y;
+					if (lastx) *lastx = x;
+					if (lasty) *lasty = y;
 					return false;
 				}
 			}
@@ -164,7 +166,8 @@ namespace
 			d = 2 * dy - dx; aincr = 2 * (dy - dx); bincr = 2 * dy; x = x1; y = y1;
 			if (!fnCallback(x, y))
 			{
-				if (lastx) *lastx = x; if (lasty) *lasty = y;
+				if (lastx) *lastx = x;
+				if (lasty) *lasty = y;
 				return false;
 			}
 			for (x = x1 + 1; x <= x2; ++x)
@@ -173,7 +176,8 @@ namespace
 				else d += bincr;
 				if (!fnCallback(x, y))
 				{
-					if (lastx) *lastx = x; if (lasty) *lasty = y;
+					if (lastx) *lastx = x;
+					if (lasty) *lasty = y;
 					return false;
 				}
 			}
@@ -3227,6 +3231,7 @@ bool C4Landscape::FindMatPathPush(int32_t &fx, int32_t &fy, int32_t mdens, int32
 		// Try to find a way out
 		int i = 1;
 		for (; i < iPushRange; i++)
+		{
 			if (GetDensity(x - i, y) <= mdens)
 			{
 				x -= i; dir = R; break;
@@ -3243,14 +3248,15 @@ bool C4Landscape::FindMatPathPush(int32_t &fx, int32_t &fy, int32_t mdens, int32
 			{
 				y += i; dir = U; break;
 			}
-			// Not found?
-			if (i >= iPushRange) return false;
-			// Done?
-			if (GetDensity(x, y) < mdens)
-			{
-				fx = x; fy = y;
-				return true;
-			}
+		}
+		// Not found?
+		if (i >= iPushRange) return false;
+		// Done?
+		if (GetDensity(x, y) < mdens)
+		{
+			fx = x; fy = y;
+			return true;
+		}
 	}
 	// Save startpoint of search
 	int32_t sx = x, sy = y, sdir = dir;

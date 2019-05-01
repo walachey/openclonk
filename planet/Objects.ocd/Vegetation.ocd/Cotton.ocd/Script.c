@@ -93,10 +93,11 @@ private func Perish()
 // If fullgrown is true, the branch will be fully grown but not bear a fruit!
 public func GrowBranch(bool fullgrown, int branch)
 {
+	var next_to_grow;
 	if (branch != nil)
-		var next_to_grow = branch;
+		next_to_grow = branch;
 	else
-		var next_to_grow = GetNextGrowableBranch(fullgrown);
+		next_to_grow = GetNextGrowableBranch(fullgrown);
 	if (next_to_grow == -1) return false;
 
 	if (branches[next_to_grow].grow_animation != branch_proto.grow_animation) // Already growing, fullgrown must be true
@@ -217,8 +218,7 @@ public func FruitFills(int branch, int time, bool fullgrown)
 	if (fullgrown)
 		SetAnimationPosition(branches[branch].grow_animation, Anim_Const(GetAnimationLength("grow", branches[branch].attach_slot)), branches[branch].attach_slot);
 	else
-		SetAnimationPosition(branches[branch].grow_animation, Anim_Linear(GetAnimationPosition(branches[branch].grow_animation,
-		                                                                  branches[branch].attach_slot),
+		SetAnimationPosition(branches[branch].grow_animation, Anim_Linear(pos,
 		                                                                  0, 
 		                                                                  GetAnimationLength("grow", branches[branch].attach_slot),
 		                                                                  time,

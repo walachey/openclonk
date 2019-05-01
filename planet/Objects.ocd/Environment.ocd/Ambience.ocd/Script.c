@@ -81,12 +81,12 @@ func InitializeEnvironments()
 	AddEnvironment(underwater, 1400);
 	
 	// City: Clonk is surrounded by buildings
-	var city = this.env_city = new Environment
+	this.env_city = new Environment
 	{
 		Name = "City",
 		CheckPlayer = this.EnvCheck_City,
 	};
-	//AddEnvironment(city, 1200); - no music/sound for now
+	//AddEnvironment(this.env_city, 1200); - no music/sound for now
 	
 	// Lava: Lava material is nearby
 	var lava = this.env_lava = new Environment
@@ -278,7 +278,9 @@ private func Env_AddAction(achance, afn, par0, par1, par2, par3, par4)
 {
 	// Make sure to not write into prototype proplist.
 	if (this.actions == this.Prototype.actions) this.actions = [];
-	return this.actions[GetLength(this.actions)] = { chance=achance, fn=afn, par=[par0, par1, par2, par3, par4] };
+	var action = { chance=achance, fn=afn, par=[par0, par1, par2, par3, par4] };
+	this.actions[GetLength(this.actions)] = action;
+	return action;
 }
 
 /* Default environment checks */

@@ -316,8 +316,8 @@ void C4Command::MoveTo()
 			if (cObj->Action.Target)
 				{ cx=cObj->Action.Target->GetX(); cy=cObj->Action.Target->GetY(); }
 		break;
-		// dig, bridge: stop
-	case DFA_DIG: case DFA_BRIDGE:
+		// dig: stop
+	case DFA_DIG:
 		ObjectComStop(cObj);
 		break;
 	}
@@ -1464,7 +1464,8 @@ void C4Command::Clear()
 	Ty=0;
 	Target=Target2=nullptr;
 	UpdateInterval=0;
-	if (Text) Text->DecRef(); Text=nullptr;
+	if (Text) Text->DecRef();
+	Text=nullptr;
 	BaseMode=C4CMD_Mode_SilentSub;
 }
 

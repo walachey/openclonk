@@ -33,9 +33,6 @@
 #ifdef HAVE_SYS_TYPES_H
 #include <sys/types.h>
 #endif
-#ifdef HAVE_LOCALE_H
-#include <clocale>
-#endif
 
 #ifdef USE_CONSOLE
 #define DONCOFF 0
@@ -274,6 +271,8 @@ void C4ConfigControls::CompileFunc(StdCompiler *pComp)
 #endif
 }
 
+#undef s
+
 C4Config::C4Config()
 {
 	Default();
@@ -481,6 +480,10 @@ void C4ConfigGeneral::DeterminePaths()
 	SCopy(ExePath.getMData(),SystemDataPath);
 #elif defined(__APPLE__)
 	SCopy(::Application.GetGameDataPath().c_str(),SystemDataPath);
+#elif defined(WITH_APPDIR_INSTALLATION)
+	// AppDir: layout like normal unix installation, but relative to executable.
+	auto str = FormatString("%s%s", ExePath.getMData(), OC_SYSTEM_DATA_DIR);
+	SCopy(str.getMData(), SystemDataPath);
 #elif defined(WITH_AUTOMATIC_UPDATE)
 	// WITH_AUTOMATIC_UPDATE builds are our tarball releases and
 	// development snapshots, i.e. where the game data is at the

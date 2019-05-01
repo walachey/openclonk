@@ -378,8 +378,8 @@ func GetInteractableObjects(array sort)
 	// Make sure that the Clonk's action target is always shown.
 	// You can push a lorry out of your bounding box and would, otherwise, then be unable to release it.
 	var main_criterion = Find_AtRect(-5, -10, 10, 20);
-	var action_target = nil;
-	if (action_target = GetActionTarget())
+	var action_target = GetActionTarget();
+	if (action_target)
 	{
 		main_criterion = Find_Or(main_criterion, Find_InArray([action_target]));
 	}
@@ -435,10 +435,11 @@ func GetInteractableObjects(array sort)
 		}
 		
 		// Can be entered or exited?
-		var can_be_exited = interactable == Contained();
-		var can_be_entered = interactable->GetOCF() & OCF_Entrance;
+		var has_entrance = interactable->GetOCF() & OCF_Entrance;
+		var can_be_exited = has_entrance && uses_container;
 		// Check if object shape overlaps with entrance area.
-		if (can_be_entered)
+		var can_be_entered = false;
+		if (has_entrance)
 		{
 			var entrance = interactable->GetEntranceRectangle();
 			var shape = GetShape();
@@ -453,7 +454,7 @@ func GetInteractableObjects(array sort)
 				can_be_entered &= (interactable->~IsContainer() || interactable->~AllowsVehicleEntrance());
 			}
 		}
-		if (can_be_entered && (!can_only_use_container || can_be_exited))
+		if (has_entrance && ((can_be_entered && !can_only_use_container) || can_be_exited))
 		{
 			var priority = 29;
 			if (can_be_exited)

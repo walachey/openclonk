@@ -327,16 +327,17 @@ func TaskWalkTo(spot)
 {
 	var iX = GetX();
 	var iY = GetY();
+	var sX, sY;
 
 	if (GetType(spot) == C4V_C4Object)
 	{
-		var sX = spot->GetX();
-		var sY = spot->GetY();
+		sX = spot->GetX();
+		sY = spot->GetY();
 	}
 	else if (GetType(spot) == C4V_PropList)
 	{
-		var sX = spot.x;
-		var sY = spot.y;
+		sX = spot.x;
+		sY = spot.y;
 	}
 	else return;
 
@@ -361,16 +362,17 @@ func TaskSwimTo(spot)
 {
 	var iX = GetX();
 	var iY = GetY();
+	var sX, sY;
 
 	if (GetType(spot) == C4V_C4Object)
 	{
-		var sX = spot->GetX();
-		var sY = spot->GetY();
+		sX = spot->GetX();
+		sY = spot->GetY();
 	}
 	else if (GetType(spot) == C4V_PropList)
 	{
-		var sX = spot.x;
-		var sY = spot.y;
+		sX = spot.x;
+		sY = spot.y;
 	}
 	else return;
 
@@ -522,9 +524,14 @@ func UpdateEnemy()
 func UpdateFood()
 {
 	// Need food?
-	if (GetEnergy() >= MaxEnergy/1000) return food = nil;
+	if (GetEnergy() >= MaxEnergy/1000)
+	{
+		food = nil;
+		return;
+	}
 	// Last one too far away now?
-	if (food && ObjectDistance(this, food) > 150) food = nil;
+	if (food && ObjectDistance(this, food) > 150)
+		food = nil;
 	// Slid in water?
 	if (food && food->GBackLiquid()) food = nil;
 

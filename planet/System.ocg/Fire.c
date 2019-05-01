@@ -201,7 +201,6 @@ global func FxFireStart(object target, proplist effect, int temp, int caused_by,
 	effect.caused_by = caused_by; // used in C4Object::GetFireCause and timer! <- fixme?
 	effect.blasted = blasted;
 	effect.incinerating_obj = incinerating_object;
-	effect.no_burn_decay = target.NoBurnDecay;
 	
 	// store fire particles
 	effect.smoke =
@@ -368,8 +367,8 @@ global func FxFireTimer(object target, proplist effect, int time)
 	if (time % (20 + effect.FreqReduction) == 0)
 	{	
 		// Extinguish when in water-like materials.
-		var mat;
-		if (mat = GetMaterial())
+		var mat = GetMaterial();
+		if (mat)
 		{
 			if (GetMaterialVal("Extinguisher", "Material", mat))
 			{
@@ -425,16 +424,17 @@ global func FxFireTimer(object target, proplist effect, int time)
 					continue;
 					
 				var old_fire_value = obj->OnFire();
-				if(old_fire_value < 100) // only if the object was not already fully ablaze
+				if (old_fire_value < 100) // only if the object was not already fully ablaze
 				{
 					// incinerate the other object a bit
-					obj->Incinerate(Max(10, amount), effect.caused_by, false, effect.incinerating_obj);
-				
-					// Incinerating other objects weakens the own fire.
-					// This is done in order to make fires spread slower especially as a chain reaction.
-					var min = Min(10, effect.strength);
-					if(effect.strength > 50) min = 50;
-					effect.strength = BoundBy(effect.strength - amount/2, min, 100);
+					if (obj->Incinerate(Max(10, amount), effect.caused_by, false, effect.incinerating_obj))
+					{
+						// Incinerating other objects weakens the own fire.
+						// This is done in order to make fires spread slower especially as a chain reaction.
+						var min = Min(10, effect.strength);
+						if (effect.strength > 50) min = 50;
+						effect.strength = BoundBy(effect.strength - amount / 2, min, 100);
+					}
 				}
 			}
 		}
@@ -451,7 +451,7 @@ global func FxFireTimer(object target, proplist effect, int time)
 		if ((time*10) % 120 <= effect.strength)
 		{
 			target->DoDamage(2, FX_Call_DmgFire, effect.caused_by);
-			if (target && !Random(2) && !effect.no_burn_decay)
+			if (target && !Random(2) && !target.NoBurnDecay)
 			{
 				target->DoCon(-1);
 				if (target)
