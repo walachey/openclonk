@@ -64,90 +64,92 @@ ModXMLData::ModXMLData(const TiXmlElement *xml, Source source)
 	}
 	// Remember the XML element in case we need to pretty-print it later.
 	originalXMLElement = xml->Clone();
-	id = getSafeStringValue(xml, "_id", "");
+	id = getSafeStringValue(xml, "id", "");
 	title = getSafeStringValue(xml, "title", "");
 	assert(IsValidUtf8(title.c_str()));
 	slug = getSafeStringValue(xml, "slug", title);
 	assert(IsValidUtf8(slug.c_str()));
-	longDescription = description = getSafeStringValue(xml, "description");
+	description = getSafeStringValue(xml, "description");
 	assert(IsValidUtf8(description.c_str()));
+	longDescription = getSafeStringValue(xml, "long_description");
 	if (!description.empty())
 	{
 		const bool descriptionNeedsCut = description.size() > 150;
-		// Find a cutoff that is not inside a UTF-8 character.
-		std::string::size_type characterCount{ 0 };
-		for (const char *c = description.data(); *c != '\0';)
+		if (descriptionNeedsCut)
 		{
-			const uint8_t val = *c;
-			if (val <= 127)
+			// Find a cutoff that is not inside a UTF-8 character.
+			std::string::size_type characterCount{ 0 };
+			for (const char* c = description.data(); *c != '\0';)
 			{
-				c += 1;
-			}
-			else
-			{
-				GetNextUTF8Character(&c);
-			}
-			characterCount += 1;
+				const uint8_t val = *c;
+				if (val <= 127)
+				{
+					c += 1;
+				}
+				else
+				{
+					GetNextUTF8Character(&c);
+				}
+				characterCount += 1;
 
-			const bool isParagraphEnd = *c == '\n';
-			const bool isSaneCutPosition = (characterCount > 140 && *c == ' ') || (characterCount > 150);
-			if (isParagraphEnd || (descriptionNeedsCut && isSaneCutPosition))
-			{
-				uint32_t byteDifference = c - description.data();
-				description.resize(byteDifference);
-				if (!isParagraphEnd)
-					description += "...";
-				break;
+				const bool shouldCutHere = characterCount >= 150;
+				if (shouldCutHere)
+				{
+					uint32_t byteDifference = c - description.data();
+					description.resize(byteDifference);
+					break;
+				}
 			}
 		}
 	}
 	assert(IsValidUtf8(description.c_str()));
 	// Additional meta-information.
 
-	for (const TiXmlElement *node = xml->FirstChildElement("dependency"); node != nullptr; node = node->NextSiblingElement("dependency"))
-	{
-		const char *depID = node->GetText();
-		if (depID != nullptr)
-			dependencies.push_back(depID);
-	}
-
-	for (const TiXmlElement *node = xml->FirstChildElement("tags"); node != nullptr; node = node->NextSiblingElement("tags"))
-	{
-		const std::string tag = getSafeStringValue(node, "text", "");
-		if (!tag.empty())
-			tags.push_back(tag);
-	}
-
-	for (const TiXmlElement *filenode = xml->FirstChildElement("files"); filenode != nullptr; filenode = filenode->NextSiblingElement("files"))
-	{
-		// We guarantee that we do not modify the handle below, thus the const_cast is safe.
-		const TiXmlHandle nodeHandle(const_cast<TiXmlNode*> (static_cast<const TiXmlNode*> (filenode)));
-
-		const std::string handle = getSafeStringValue(filenode, "_id", "");
-		const std::string name = getSafeStringValue(filenode, "filename", "");
-		const std::string lengthString = getSafeStringValue(filenode, "length", "");
-
-		std::string hashSHA1 = "";
-		const auto hashNode = nodeHandle.FirstChild("metadata").FirstChild("hashes").Node();
-		if (hashNode != nullptr)
+	const TiXmlElement* dependencies_node = xml->FirstChildElement("dependencies");
+	if (dependencies_node != nullptr)
+		for (const TiXmlElement *node = dependencies_node->FirstChildElement("item"); node != nullptr; node = node->NextSiblingElement("item"))
 		{
-			hashSHA1 = getSafeStringValue(hashNode->ToElement(), "sha1", "");
+			const char *depID = node->GetText();
+			if (depID != nullptr)
+				dependencies.push_back(depID);
 		}
 
-		if (handle.empty() || name.empty() || lengthString.empty()) continue;
-		size_t length{ 0 };
+	const TiXmlElement* tags_node = xml->FirstChildElement("tags");
+	if (tags_node != nullptr)
+		for (const TiXmlElement *node = tags_node->FirstChildElement("item"); node != nullptr; node = node->NextSiblingElement("item"))
+		{
+			const std::string tag = node->GetText();
+			if (!tag.empty())
+				tags.push_back(tag);
+		}
 
-		try
+	const TiXmlElement* files_node = xml->FirstChildElement("files");
+	if (files_node != nullptr)
+		for (const TiXmlElement *filenode = files_node->FirstChildElement("item"); filenode != nullptr; filenode = filenode->NextSiblingElement("item"))
 		{
-			length = std::stoi(lengthString);
-		}
-		catch (...)
-		{
-			continue;
-		}
+			// We guarantee that we do not modify the handle below, thus the const_cast is safe.
+			const TiXmlHandle nodeHandle(const_cast<TiXmlNode*> (static_cast<const TiXmlNode*> (filenode)));
+
+			const std::string handle = getSafeStringValue(filenode, "id", "");
+			const std::string name = getSafeStringValue(filenode, "filename", "");
+			const std::string lengthString = getSafeStringValue(filenode, "length", "");
+
+			const std::string hashSHA1 = getSafeStringValue(filenode, "sha1", "");
+
+			if (handle.empty() || name.empty() || lengthString.empty()) continue;
+			size_t length{ 0 };
+
+			try
+			{
+				length = std::stoi(lengthString);
+			}
+			catch (...)
+			{
+				continue;
+			}
 		 
-		files.emplace_back(FileInfo{ handle, length, name, hashSHA1 });
-	}
+			files.emplace_back(FileInfo{ handle, length, name, hashSHA1 });
+		}
 }
 
 ModXMLData::~ModXMLData()
@@ -238,12 +240,9 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml, ModXMLData::Source
 		}
 		else
 			updated = "/";
-		std::string votingScore = getSafeStringValue(xml->FirstChildElement("voting"), "sum", "");
-		if (votingScore.empty() || votingScore == "NaN")
-			votingScore = "-/-";
-		sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"), updated.c_str(), votingScore.c_str());
+		sInfoTextRight[0].Format(LoadResStr("IDS_MODS_METAINFO"), updated.c_str());
 	}
-	const std::string author = getSafeStringValue(xml->FirstChildElement("author"), "username", "???");
+	const std::string author = getSafeStringValue(xml, "author", "???");
 	const std::string title = modXMLData->title.empty() ? "???" : modXMLData->title;
 	sInfoText[0].Format(LoadResStr("IDS_MODS_TITLE"), title.c_str(), author.c_str());
 
@@ -258,12 +257,12 @@ void C4StartupModsListEntry::FromXML(const TiXmlElement *xml, ModXMLData::Source
 
 	for (auto &tag : modXMLData->tags)
 	{
-		if ((tag == ".ocs" || tag == ".ocf") && !hasScenario)
+		if ((tag == ".scenario") && !hasScenario)
 		{
 			AddStatusIcon(C4GUI::Icons::Ico_Gfx, LoadResStr("IDS_MODS_TAGS_SCENARIO"));
 			hasScenario = true;
 		}
-		else if (tag == ".ocd")
+		else if (tag == ".objects")
 		{
 			AddStatusIcon(C4GUI::Icons::Ico_Definition, LoadResStr("IDS_MODS_TAGS_OBJECT"));
 			hasObjectPackage = true;
@@ -657,7 +656,7 @@ void C4StartupModsDownloader::ModInfo::CheckProgress()
 	{
 		postClient = std::make_unique<C4Network2HTTPClient>();
 
-		if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::GetBaseServerURL() + "media/" + files.back().handle + "?download").c_str()))
+		if (!postClient->Init() || !postClient->SetServer((C4StartupModsDlg::GetBaseServerURL() + "files/" + files.back().handle).c_str()))
 		{
 			assert(false);
 			return;
@@ -883,12 +882,22 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			return;
 		}
-		const char * resourceElementName = "resource";
+		const char * resourceElementName = "root";
 		const TiXmlElement *root = xmlDocument.RootElement();
 		assert(strcmp(root->Value(), resourceElementName) == 0);
 
 		// Re-use the parsing from the list entries.
 		ModXMLData modXMLData(root, ModXMLData::Source::DetailView);
+
+		// Empty reply? Skip.
+		if (modXMLData.id.empty())
+		{
+			mod->SetError(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"));
+			// Destroy client and try next mod.
+			Application.InteractiveThread.RemoveProc(postMetadataClient.get());
+			postMetadataClient.reset();
+			return;
+		}
 
 		// Find the mod matching the id from the metadata.
 		size_t foundIdx = 0;
@@ -905,6 +914,7 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 		// Somehow, the matching mod could not be found. That should not happen.
 		if (foundIdx == items.size())
 		{
+			Log((std::string("Answer for ") + modXMLData.id + " was not requested.").c_str());
 			CancelRequest();
 			::pGUI->ShowMessageModal(LoadResStr("IDS_MODS_NOINSTALL_UPDATEMETADATAFAILED"), LoadResStr("IDS_MODS_NOINSTALL"), C4GUI::MessageDialog::btnOK, C4GUI::Ico_Resource);
 			assert(false);
@@ -1087,7 +1097,7 @@ void C4StartupModsDownloader::ModInfo::LocalDiscoveryCheck::Execute()
 				size_t index = 0;
 				for (size_t offset = 0; offset < hashString.size(); offset += byteLen, index += 1)
 				{
-					// Oddly, the indices of the byte array to not correspond 1-to-1 to a standard sha1 string.
+					// Oddly, the indices of the byte array do not correspond 1-to-1 to a standard sha1 string.
 					const size_t hashIndex = (index / 4 * 4) + (3 - (index % 4));
 					const BYTE &byte = hash[hashIndex];
 
@@ -1167,7 +1177,6 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	
 	sortingOptions =
 	{
-		{ "voting.sum", "IDS_MODS_SORT_RATING_DOWN", "IDS_MODS_SORT_RATING_UP" },
 		{ "title", "IDS_MODS_SORT_NAME_UP", "IDS_MODS_SORT_NAME_DOWN" },
 		{ "updatedAt", "IDS_MODS_SORT_DATE_DOWN", "IDS_MODS_SORT_DATE_UP" },
 	};
@@ -1362,13 +1371,13 @@ void C4StartupModsDlg::QueryModList(bool loadNextPage)
 	}
 	if (filters.showPlayable->GetChecked())
 	{
-		tagFilters.push_back(".ocs");
+		tagFilters.push_back(".scenario");
 	}
 	if (!tagFilters.empty())
 	{
 		std::ostringstream os;
 		for (size_t i = 0; i < tagFilters.size(); ++i)
-			os << ((i == 0) ? "tags.slug=" : ",") << tagFilters[i];
+			os << ((i == 0) ? "tags=" : ",") << tagFilters[i];
 		searchQueryPostfix += os.str() + "&";
 	}
 
@@ -1382,7 +1391,6 @@ void C4StartupModsDlg::QueryModList(bool loadNextPage)
 	const int requestedOffset = loadNextPage ? pageInfo.currentlySkipped + pageInfo.maxResultsPerQuery: 0;
 	searchQueryPostfix += "limit=" + std::to_string(pageInfo.maxResultsPerQuery) + "&skip=" + std::to_string(requestedOffset) + "&";
 
-	Log(searchQueryPostfix.c_str());
 	// Initialize connection.
 	// Abort possible running request.
 	CancelRequest();
@@ -1527,14 +1535,13 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 				infoEntry->OnError(xmlDocument.ErrorDesc());
 				return;
 			}
-			const char * rootElementName = "resource";
-			const char * resourceElementName = "resource";
+			const char * rootElementName = "root";
 			const TiXmlElement *root = xmlDocument.RootElement();
 			assert(strcmp(root->Value(), rootElementName) == 0);
 
 			// Parse pagination data.
 			pageInfo.totalResults = pageInfo.currentlySkipped = 0;
-			const TiXmlElement *meta = root->FirstChildElement("_meta");
+			const TiXmlElement *meta = root->FirstChildElement("meta");
 			if (meta != nullptr)
 			{
 				try
@@ -1544,8 +1551,10 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 				}
 				catch (...) {}
 			}
+			const TiXmlElement* resources = root->FirstChildElement("resources");
+			const char* resourceElementName = "item";
 			std::vector<TiXmlElementLoaderInfo> elements;
-			for (const TiXmlElement* e = root->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
+			for (const TiXmlElement* e = resources->FirstChildElement(resourceElementName); e != NULL; e = e->NextSiblingElement(resourceElementName))
 			{
 				// Ignore empty elements.
 				if (e->FirstChild() == nullptr)
