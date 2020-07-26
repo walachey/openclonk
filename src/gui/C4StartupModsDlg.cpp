@@ -923,7 +923,7 @@ void C4StartupModsDownloader::ExecuteMetadataUpdate()
 		else
 		{
 			// The mod might have some additional dependencies that need to be retrieved.
-			const auto &mod{ items[foundIdx] };
+			const std::unique_ptr<C4StartupModsDownloader::ModInfo> &mod = items[foundIdx];
 			
 			for (const std::string &dependency : mod->dependencies)
 				AddModToQueue(dependency, dependency);
@@ -1246,16 +1246,21 @@ C4StartupModsDlg::C4StartupModsDlg() : C4StartupDlg(LoadResStr("IDS_DLG_MODS")),
 	}
 	{
 		CStdFont *pUseFont = &(C4Startup::Get()->Graphics.BookFont);
-		auto addCheckbox = [&pUseFont, &caConfigArea, this] (C4GUI::CheckBox**checkbox, const char *szText, const char *szTooltip)
+		auto addCheckbox = [&pUseFont, &caConfigArea, this] (C4GUI::CheckBox**checkbox, const char *szText, const char *szTooltip, const C4GUI::Icons icon)
 		{
 			int iWdt = 150, iHgt = 12;
 			C4GUI::CheckBox::GetStandardCheckBoxSize(&iWdt, &iHgt, szText, pUseFont);
 			*checkbox = new C4GUI::CheckBox(caConfigArea.GetFromTop(iHgt, -1), szText, true);
 			(*checkbox)->SetToolTip(szTooltip);
 			AddElement(*checkbox);
+			const auto& checkbox_bounds = (*checkbox)->GetBounds();
+			const int32_t line_height = ::GraphicsResource.TextFont.GetLineHeight();
+			C4Rect icon_rect(checkbox_bounds.GetRight(), checkbox_bounds.GetTop(), line_height, line_height);
+			auto icon_element = new C4GUI::Icon(icon_rect, icon);
+			AddElement(icon_element);
 		};
-		addCheckbox(&filters.showCompatible, LoadResStr("IDS_MODS_FILTER_COMPATIBLE"), LoadResStr("IDS_MODS_FILTER_COMPATIBLE_DESC"));
-		addCheckbox(&filters.showPlayable, LoadResStr("IDS_MODS_FILTER_PLAYABLE"), LoadResStr("IDS_MODS_FILTER_PLAYABLE_DESC"));
+		addCheckbox(&filters.showCompatible, LoadResStr("IDS_MODS_FILTER_COMPATIBLE"), LoadResStr("IDS_MODS_FILTER_COMPATIBLE_DESC"), C4GUI::Ico_Clonk);
+		addCheckbox(&filters.showPlayable, LoadResStr("IDS_MODS_FILTER_PLAYABLE"), LoadResStr("IDS_MODS_FILTER_PLAYABLE_DESC"), C4GUI::Ico_Gfx);
 	}
 	// Add button to manually search the database (as opposed to hitting F5).
 	AddElement(btn = new C4GUI::CallbackButton<C4StartupModsDlg>(LoadResStr("IDS_MODS_SEARCH_ONLINE"), caConfigArea.GetFromTop(iButtonHeight), &C4StartupModsDlg::OnSearchOnlineBtn));
@@ -1590,8 +1595,6 @@ void C4StartupModsDlg::UpdateList(bool fGotReference, bool onlyWithLocalFiles)
 	pGameSelList->FreezeScrolling();
 	
 	// Refresh the "installed" state of all entries after new discovery.
-	bool fAnyRemoval{ false };
-
 	if (requiredSyncWithDiscovery)
 	{
 		requiredSyncWithDiscovery = false;
